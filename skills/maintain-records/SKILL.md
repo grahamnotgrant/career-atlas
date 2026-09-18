@@ -1,0 +1,24 @@
+---
+name: maintain-records
+description: Reconcile employer messages, missing submissions, resume links and stale applications with canonical records.
+---
+
+# Maintain records
+
+Read `../SESSION.md` and `../stop-slop/SKILL.md`. Complete Common startup in `../../docs/AGENT-START.md`, then use the maintenance steps below within its Resume and sync path. Do not restart the startup path recursively. Use the documented API and maintenance commands in `../../docs/CAREER-CONTROL.md`; this skill does not submit applications.
+
+**Inputs:** authorized mailbox or employer sources, canonical records (`npm run career -- state` and the local API), saved resume folders, the Queue and per-source checkpoints.
+
+1. Read full employer messages since each source's last successful checkpoint. Classify acknowledgments, invitations, scheduled interviews, completed interviews, decisions and unrelated messages separately. Preserve source IDs and event dates. Do not advance a checkpoint past an incomplete scan.
+2. Resolve application identity before changing records. Prefer an application ID, requisition ID, ATS URL or an existing message thread tied to the application. Use company, title, location and dates as supporting evidence. A changed title or location can describe the same application: preserve the original title and record the alias and its evidence. A prior explicit user confirmation of that identity remains valid. Company alone, a similar title, or a shared recruiter is insufficient. Conflicting IDs or multiple plausible applications remain unresolved; do not merge, create a duplicate or change an outcome just to clear the mismatch. Ask one focused question only when available evidence cannot resolve it.
+3. Write a decisions plan with the exact application ID, source and message text. Save the matching rationale and source IDs in the private session. Review the plan against fresh canonical records, then use `npm run decisions -- apply`. Report per-entry failures and skipped records; read back successful changes. Preserve existing evidence and distinguish closed roles from employer rejections. Use the documented career workflow for offers and interview events.
+4. An employer acknowledgment or decision can establish a missing submission when it explicitly refers to the user's application for the matched role. A generic sourcing message, canceled vacancy or talent-pool notice does not establish submission. Reconcile existing opportunities and uncertain attempts before creating anything. Use `confirm` with receipt evidence and a submission date of null when unknown. Add the supported decision or interview event separately; do not infer that intermediate interviews occurred.
+5. Use `npm run resumes -- propose` to find candidate files. A filename or company-name match alone does not prove which resume was submitted. Apply links as submitted materials only when a receipt, saved upload record, recorded hash or explicit user confirmation identifies that file. Keep unsupported candidates unresolved, preserve existing links and immutable submitted files, and save the basis in the plan. Review proposed entries before applying; do not remove a review flag without resolving its missing evidence.
+6. Tidy the Queue using supported facts: mark a role closed when the employer confirms it, and re-screen when role facts change. Preserve the user's decisions, preferences, authorization and other agents' claims. Never classify an internal skip as an employer rejection.
+7. Report applications silent for 30 days or more as stale, without changing their outcome. If the relevant date is unknown, retain that uncertainty. Save source coverage and unresolved items, then finish with the startup guide's API read-back and spreadsheet export verification.
+
+**Outputs:** evidence and applied plans in the private data directory; source checkpoints; changed record IDs; before/after counts; matching rationales; unresolved items; separate record and export verification results.
+
+**Approval gates:** a user request to maintain or sync records authorizes clear, evidence-backed updates within that scope. The agent reviews the concrete plan before applying it; do not request the same authorization again. Ask for clarification when identity or submitted-file evidence remains ambiguous. Changes to resume claims, application authorization or external submissions follow their existing approval rules. Do not overwrite contradictory evidence or force a previously decided outcome without resolving the conflict.
+
+**Completion checks:** each change has source evidence and an identity match; title aliases do not create duplicates; ambiguous matches remain unchanged; scheduled interviews stay distinct from completed interviews; linked submitted resumes have file-specific evidence; totals reconcile to the API; the session records export verification and incomplete source coverage.
