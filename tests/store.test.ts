@@ -187,3 +187,148 @@ describe("journey truth", () => {
     expect(journeys([])).toEqual([]);
   });
 });
+
+it("keeps a stage selection in the view and clears it when the place changes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "career-flow-selection-"));
+  const store = new Store(dir);
+  try {
+    store.importManifest(demoManifest(), "demo");
+    const select = (selection: unknown, expectedRevision: number) =>
+      store.command({
+        id: `sel-${expectedRevision}`,
+        expectedRevision,
+        action: "selection",
+        payload: { selection },
+      });
+    let view = select(
+      { kind: "stage", id: "recruiter" },
+      store.snapshot().view.revision,
+    ).view;
+    expect(view.selection).toEqual({ kind: "stage", id: "recruiter" });
+    expect(() =>
+      select({ kind: "stage", id: "nowhere" }, view.revision),
+    ).toThrow();
+    view = store.command({
+      id: "loc",
+      expectedRevision: view.revision,
+      action: "location",
+      payload: { city: "nyc" },
+    }).view;
+    expect(view.selection).toBeNull();
+    view = select({ kind: "outcome", id: "rejected" }, view.revision).view;
+    expect(new Store(dir).snapshot().view.selection).toEqual({
+      kind: "outcome",
+      id: "rejected",
+    });
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("attaches a resume by hash with its label, refuses a second without replace, and serves the file", () => {
+  const { dir, store } = setup();
+  store.importManifest(demoManifest(), dir);
+  const pdf = join(dir, "sent.pdf");
+  writeFileSync(pdf, "%PDF-1.4\n%resume bytes\n");
+  const attached = store.attachResume("demo-1", {
+    path: pdf,
+    label: "Resume named in the record; bytes not verified",
+    basis: "Record names sent.pdf; no hash recorded.",
+  });
+  expect(attached.sha256).toBe(hash(readFileSync(pdf)));
+  const app = store.snapshot().applications.find((a) => a.id === "demo-1")!;
+  const resume = app.evidence.find((e) => e.kind === "resume")!;
+  expect(resume.label).toMatch(/not verified/);
+  expect(resume.file).toBe(`/api/evidence/${resume.id}/file`);
+  expect(store.artifact(resume.id).path).toBe(
+    join(dir, "artifacts", attached.sha256),
+  );
+  expect(() =>
+    store.attachResume("demo-1", { path: pdf, label: "x", basis: "y" }),
+  ).toThrow(/already linked/);
+  writeFileSync(pdf, "not a pdf");
+  expect(() =>
+    store.attachResume("demo-2", { path: pdf, label: "x", basis: "y" }),
+  ).toThrow(/PDF/);
+  expect(() =>
+    store.attachResume("nope", { path: pdf, label: "x", basis: "y" }),
+  ).toThrow(/not found/);
+});
+
+it("records an employer decision as cited evidence and refuses to decide twice", () => {
+  const { dir, store } = setup();
+  store.importManifest(demoManifest(), dir);
+  const pending = store
+    .snapshot()
+    .applications.find((a) => a.status === "pending")!;
+  const result = store.recordDecision(pending.id, {
+    status: "rejected",
+    date: "2026-09-10",
+    source: "mail:thread/abc",
+    text: "After careful consideration we will not be moving forward.",
+  });
+  const app = store.snapshot().applications.find((a) => a.id === pending.id)!;
+  expect(app.status).toBe("rejected");
+  const event = app.events.find((e) => e.id === result.eventId)!;
+  expect(event).toMatchObject({
+    kind: "decision",
+    date: "2026-09-10",
+    stage: null,
+  });
+  const evidence = app.evidence.find((e) => e.id === result.evidenceId)!;
+  expect(evidence).toMatchObject({
+    kind: "feedback",
+    basis: "mail:thread/abc",
+  });
+  expect(event.evidenceIds).toContain(evidence.id);
+  expect(() =>
+    store.recordDecision(pending.id, {
+      status: "closed",
+      date: "2026-09-11",
+      source: "x",
+      text: "y",
+    }),
+  ).toThrow(/already rejected/);
+  expect(() =>
+    store.recordDecision("missing", {
+      status: "closed",
+      date: "2026-09-11",
+      source: "x",
+      text: "y",
+    }),
+  ).toThrow(/not found/);
+});
+
+it("lets only the user close silent applications, and only after 30 days", () => {
+  const { dir, store } = setup();
+  const m = demoManifest();
+  const old = m.applications.find((a) => a.status === "pending")!;
+  old.submitted = "2026-06-01";
+  for (const e of old.events) if (e.date) e.date = "2026-06-01";
+  const fresh = m.applications.find(
+    (a) => a.status === "pending" && a.id !== old.id,
+  )!;
+  store.importManifest(m, dir);
+  const revision = store.snapshot().view.revision;
+  expect(() =>
+    store.command({
+      id: "cs-1",
+      expectedRevision: revision,
+      action: "close-silent",
+      payload: { ids: [fresh.id] },
+    }),
+  ).toThrow(/not been silent/);
+  store.command({
+    id: "cs-2",
+    expectedRevision: revision,
+    action: "close-silent",
+    payload: { ids: [old.id] },
+  });
+  const closed = store.snapshot().applications.find((a) => a.id === old.id)!;
+  expect(closed.status).toBe("closed");
+  const decision = closed.events.at(-1)!;
+  expect(decision.kind).toBe("decision");
+  expect(decision.label).toMatch(/Closed by you/);
+  expect(closed.evidence.at(-1)!.basis).toBe("user");
+});

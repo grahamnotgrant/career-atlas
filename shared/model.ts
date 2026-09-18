@@ -1,3 +1,4 @@
+import type { CareerState } from "./career";
 import { sceneIds, sceneCatalog } from "./locations";
 import { z } from "zod";
 export const stageSchema = z.enum([
@@ -15,6 +16,15 @@ export const statusSchema = z.enum([
   "offer",
 ]);
 export const themeSchema = z.enum(sceneIds);
+/** What the scene shows as an outcome. `noreply` is derived, never stored:
+    a pending application silent for 30 days or more. */
+export const outcomeSchema = z.enum([
+  "pending",
+  "noreply",
+  "rejected",
+  "closed",
+]);
+export type Outcome = z.infer<typeof outcomeSchema>;
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const day = z.iso.date();
 export const evidenceSchema = z.object({
@@ -47,7 +57,7 @@ export const applicationSchema = z.object({
   theme: themeSchema,
   compensation: z.string().max(1000),
   status: statusSchema,
-  submitted: day,
+  submitted: day.nullable(),
   asOf: day,
   verification: z.string().max(500),
   events: z.array(eventSchema).min(1),
@@ -89,11 +99,21 @@ export type Manifest = z.infer<typeof manifestSchema>;
 export type Theme = z.infer<typeof themeSchema>;
 export type Stage = z.infer<typeof stageSchema>;
 export type Status = z.infer<typeof statusSchema>;
+/** A stage or outcome orb the scene is focused on; it scopes the outcome counts. */
+export const selectionSchema = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("stage"), id: stageSchema }),
+    z.object({ kind: z.literal("outcome"), id: outcomeSchema }),
+  ])
+  .nullable();
+export type Selection = z.infer<typeof selectionSchema>;
 export const viewSchema = z.object({
   revision: z.number().int().nonnegative(),
   selectedId: id.nullable(),
+  selection: selectionSchema.default(null),
   theme: themeSchema,
   city: themeSchema.nullable().default(null),
+  roleFamilyId: id.nullable().default(null),
   themeLocked: z.boolean(),
   motion: z.boolean(),
   status: z.union([statusSchema, z.literal("all")]),
@@ -106,8 +126,10 @@ export type View = z.infer<typeof viewSchema>;
 export const initialView: View = {
   revision: 0,
   selectedId: null,
+  selection: null,
   theme: "neutral",
   city: null,
+  roleFamilyId: null,
   themeLocked: false,
   motion: true,
   status: "all",
@@ -121,6 +143,7 @@ export const commandSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
   action: z.enum([
     "location",
+    "role",
     "select",
     "theme",
     "motion",
@@ -131,6 +154,8 @@ export const commandSchema = z.object({
     "document",
     "back",
     "close",
+    "selection",
+    "close-silent",
   ]),
   payload: z.record(z.string(), z.unknown()).default({}),
 });
@@ -142,6 +167,8 @@ export interface HomeLocation {
   evidenceIds: string[];
 }
 export interface Snapshot {
+  workspaceId?: string;
+  career: CareerState;
   homeLocation: HomeLocation;
   applications: Application[];
   view: View;
@@ -164,6 +191,12 @@ export const statusLabels: Record<Status, string> = {
   rejected: "Rejected",
   closed: "Closed / withdrawn",
   offer: "Offer",
+};
+export const outcomeLabels: Record<Outcome, string> = {
+  pending: "Awaiting response",
+  noreply: "No reply",
+  rejected: "Rejected",
+  closed: "Closed / withdrawn",
 };
 export const stageLabels: Record<Stage, string> = {
   applied: "Applied",
