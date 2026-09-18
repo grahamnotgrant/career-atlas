@@ -112,3 +112,11 @@ OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
+
+## ExcelJS
+
+Excel export uses [ExcelJS](https://github.com/exceljs/exceljs), distributed under the MIT License. Its license is included with the installed package at `node_modules/exceljs/LICENSE`. Career Atlas uses its XLSX writer; imported spreadsheets are not executed.
+
+## Bundled skills
+
+The Career Atlas skill instructions and writing rules are original project text covered by the root MIT License. They do not embed a third-party Stop Slop implementation.

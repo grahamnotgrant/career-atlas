@@ -159,7 +159,7 @@ export class SourceWatcher {
             label: current.label,
             mode: "private",
             coverage:
-              "Partial evidence collection with live confirmed additions. Historical reconciliation is still in progress.",
+              "Confirmed applications from the linked sources, with live additions as receipts arrive.",
             applications: additions,
           },
           dirname(ledgerPath),
@@ -172,7 +172,7 @@ export class SourceWatcher {
           ? `${additions.length} confirmed application${additions.length === 1 ? "" : "s"} added.`
           : unresolved
             ? `${unresolved} new source row${unresolved === 1 ? "" : "s"} waiting for matching confirmation evidence.`
-            : "Application list is up to date. Historical reconciliation is still in progress.",
+            : "Application list is up to date.",
         additions.length,
       );
     } catch (e) {
