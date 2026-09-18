@@ -8,3 +8,7 @@ data/
 test-results/
 playwright-report/
 .DS_Store
+
+# Optional, locally installed agent shortcuts
+/.agents/skills/career-*/
+/.claude/skills/career-*/
