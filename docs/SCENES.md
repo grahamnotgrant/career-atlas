@@ -4,7 +4,7 @@ The background library contains Overview, Remote and 16 cities: New York, Los An
 
 ## Selection
 
-The Background dropdown contains Overview plus recognized locations in imported applications. Multiple listed offices can contribute multiple options. Search and outcome filters do not change this catalog. Choosing a background does not filter applications. Selecting an application follows its location automatically; remote roles take precedence over office mentions. Unsupported locations use the manifest's explicit scene or the Overview fallback.
+Selecting a stage or outcome orb keeps the overview and shows where those applications are now. One ribbon runs from the orb to each city holding them, widest for the largest city and capped at eight ribbons; the rest stay listed in the panel. Remote applications ribbon to the satellite beside the globe. Applications that ended at a selected stage drop into their outcome orbs when motion is on. The panel on the right lists companies by location, what happened next and past applications. Hovering a company highlights its city; opening a company opens its record and the selection resumes when the record closes. Selecting an application follows its location automatically; remote roles take precedence over office mentions, and a remote role restricted to a city lights a line from the satellite to that city. Unsupported locations use the manifest's explicit scene or the Overview fallback.
 
 ## Globe and camera
 
@@ -27,12 +27,22 @@ Home location means the address stated in the resume, not birthplace or a separa
 
 Avoid ambiguous substring matches and unwarranted geographic assumptions. Aliases are metro-area conveniences for role locations. Unsupported cities remain on the globe rather than acquiring invented scenery. Adding a city to the library does not add it to every user's dropdown.
 
+## Process display
+
+In Overview and Remote, stage and outcome orbs surround the globe. City scenes use a horizontal stage line above the skyline and outcome totals below. Their positions represent process, never geography. Applied is the cumulative submission count; later stages distinguish current occupancy from historical reach. With a stage selected, the outcome orbs count only that stage's applications. A fourth outcome orb, No reply, shows pending applications silent for 30 days or more; it is derived from dates, the record stays awaiting, and its panel offers the user, and only the user, a way to close them as no reply.
+
+City markers carry two signals. At rest the count's colour is the place's response-rate band against the other places: green above the median, grey for none, plain for the rest or for fewer than three applications. Under a selection the pill fades with the share of that place's applications that have been silent for 30 days or more.
+
+## Globe rendering
+
+The globe stays an SVG orthographic projection. A textured, rotating night-side Earth would need WebGL, which would replace the geometry the accessibility and browser checks are written against and add a rendering dependency to a local tool. Revisit only if the SVG globe becomes the limiting factor for a feature, not for looks alone.
+
 ## Geographic assets
 
 The globe uses [World Atlas](https://github.com/topojson/world-atlas), derived from Natural Earth, rendered with [D3's orthographic projection](https://d3js.org/d3-geo/azimuthal). Assets ship locally. See THIRD-PARTY-NOTICES.md for the dependency licenses used by the globe.
 
 ## Geographic exploration
 
-The overview globe supports pointer dragging and arrow-key rotation. Visible city markers use real coordinates and application counts. Selecting a city zooms into its scene and filters the process display and application list to that city; this selection persists on refresh. Remote uses a separate non-geographic control and retains the globe. Only known applied cities receive markers.
+The overview globe supports pointer dragging and arrow-key rotation. Visible city markers use real coordinates and application counts. Selecting a city zooms into its scene and filters the process display and application list to that city; this selection persists on refresh. Remote is the satellite beside the globe; opening it filters to remote roles and retains the globe. Only known applied cities receive markers. Stage and outcome selection is part of the shared view state: it persists on refresh and the local API can set it with the `selection` command.
 
 City scenes use a horizontal hiring-stage line above the skyline and outcome totals below. Overview and Remote retain the circular layout around the globe. Selected journey geometry switches with the scene; recorded stages and cohort counts do not change.

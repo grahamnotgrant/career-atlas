@@ -35,7 +35,7 @@ export function Popup({
       if (e.key === "Tab" && panel.current) {
         const nodes = [
           ...panel.current.querySelectorAll<HTMLElement>(
-            "button:not(:disabled), input, a[href], select, summary",
+            "button:not(:disabled), input, textarea, a[href], select, summary",
           ),
         ].filter((el) => el.getClientRects().length);
         const first = nodes[0],

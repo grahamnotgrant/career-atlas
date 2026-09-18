@@ -1,6 +1,43 @@
 import { sceneIds } from "../shared/locations";
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+async function setTheme(page: Page, theme: string) {
+  await page.evaluate(async (theme) => {
+    const s = await (await fetch("/api/snapshot")).json();
+    const response = await fetch("/api/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        expectedRevision: s.view.revision,
+        action: "theme",
+        payload: { theme },
+      }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+  }, theme);
+  await expect(page.locator(".app")).toHaveAttribute("data-theme", theme);
+}
+async function setCity(page: Page, city: string | null) {
+  await page.evaluate(async (city) => {
+    const s = await (await fetch("/api/snapshot")).json();
+    const response = await fetch("/api/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        expectedRevision: s.view.revision,
+        action: "location",
+        payload: { city },
+      }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+  }, city);
+  await expect(page.locator(".app")).toHaveAttribute(
+    "data-theme",
+    city ?? "neutral",
+  );
+}
 async function openApplication(page: Page, company: string) {
   await page.getByRole("button", { name: "Find an application" }).click();
   await page
@@ -12,7 +49,7 @@ async function openApplication(page: Page, company: string) {
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("button", { name: /Saved on this device/ }),
+    page.getByRole("button", { name: "Find an application" }),
   ).toBeVisible();
   const revision = await page.evaluate(async () => {
     const s = await (await fetch("/api/snapshot")).json();
@@ -79,21 +116,30 @@ test("clicks a journey dot, changes scene without moving the canvas, and closes 
   await page.reload();
   await expect(page.locator(".app")).toHaveAttribute("data-theme", "chicago");
 });
-test("opens outcome membership in a popup and handles empty offers", async ({
+test("selects an outcome to list its members and says when a stage is empty", async ({
   page,
 }) => {
   await page
     .getByRole("button", { name: "Rejected: 3 applications", exact: true })
     .click();
-  await expect(page.locator(".search-result")).toHaveCount(3);
-  await page.reload();
-  await expect(page.locator(".search-result")).toHaveCount(3);
-  await page.getByRole("button", { name: "Close popup" }).click();
+  const panel = page.locator(".stage-panel");
+  await expect(panel.locator("h2")).toHaveText("Rejected");
+  await expect(panel).toContainText("3 applications");
+  await expect(panel).toContainText("Last confirmed stage");
+  await expect(panel.locator(".stage-companies button")).toHaveCount(3);
   await page
     .getByRole("button", { name: "Offer: 0 applications reached", exact: true })
     .click();
-  await expect(page.getByText("No applications here yet")).toBeVisible();
+  await expect(panel.locator("h2")).toHaveText("Offer");
+  await expect(panel).toContainText("No applications here yet");
+  await page.reload();
+  await expect(panel.locator("h2")).toHaveText("Offer");
+  await page.getByRole("button", { name: "Back to overview" }).click();
+  await expect(panel).toHaveCount(0);
+  await page.reload();
+  await expect(panel).toHaveCount(0);
 });
+
 test("searches by keyboard, presents readable titles and cleans location markup", async ({
   page,
 }) => {
@@ -115,15 +161,11 @@ test("respects reduced motion, follows location, and passes popup accessibility 
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator(".flow-light")).toHaveCount(0);
-  await expect(page.getByLabel("Background", { exact: true })).toBeVisible();
   await openApplication(page, "Northstar");
   await expect(page.locator(".app")).toHaveAttribute("data-theme", "nyc");
   await expect(
     page.getByRole("button", { name: "Back to globe", exact: true }),
   ).toHaveCount(1);
-  await expect(
-    page.getByRole("button", { name: "Reset view", exact: true }),
-  ).toHaveCount(0);
   const result = await new AxeBuilder({ page }).analyze();
   expect(
     result.violations.filter((v) =>
@@ -152,9 +194,6 @@ test("restores the view with an empty browser profile and makes no external requ
   await expect(
     page.getByRole("button", { name: "Back to globe", exact: true }),
   ).toHaveCount(1);
-  await expect(
-    page.getByRole("button", { name: "Reset view", exact: true }),
-  ).toHaveCount(0);
   const context = await browser.newContext(),
     fresh = await context.newPage(),
     outside: string[] = [];
@@ -197,7 +236,7 @@ test("checks text contrast across all location scenes", async ({ page }) => {
     ).toEqual([]);
   }
 });
-test("streams a confirmed source addition into the scene without moving the open application", async ({
+test("queues a confirmed source addition until the scene is visible", async ({
   page,
 }) => {
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
@@ -247,26 +286,39 @@ test("streams a confirmed source addition into the scene without moving the open
       ledger,
       "## Submitted\n| 2026-09-17 | AI Engineer | New Harbor | $180K | Remote | ATS | receipts/new-harbor-confirmation.txt |\n## Still queued\n",
     );
-    await expect(page.locator(".application-arrival")).toHaveCount(1);
-    await expect(page.locator(".arrival-toast")).toHaveCount(0);
-    const particle = page.locator(".arrival-particle");
-    await expect(particle).toHaveCount(1);
-    const startY = Number(await particle.getAttribute("cy"));
-    await expect
-      .poll(async () => Number(await particle.getAttribute("cy")))
-      .toBeGreaterThan(startY + 10);
-    await expect(page.locator(".journey")).toHaveCount(15);
+    await expect(
+      page.getByText("15 confirmed applications", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Watch 1 new application" }),
+    ).toBeVisible();
+    await expect(page.locator(".application-arrival")).toHaveCount(0);
     await expect(page.getByRole("dialog")).toContainText("Northstar");
     expect(
       await page
         .locator('[data-application="demo-0"] .journey-thread')
         .getAttribute("d"),
     ).toBe(previous);
+    // Reload during the open detail view must preserve the unseen arrival.
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "Watch 1 new application" }),
+    ).toBeVisible();
+    await expect(page.locator(".application-arrival")).toHaveCount(0);
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close popup", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Watch 1 new application" }).click();
+    await expect(page.locator(".application-arrival")).toHaveCount(1);
+    const particle = page.locator(".arrival-particle");
+    const startY = Number(await particle.getAttribute("cy"));
+    await expect
+      .poll(async () => Number(await particle.getAttribute("cy")))
+      .toBeGreaterThan(startY + 10);
     await expect(page.locator(".application-arrival")).toHaveCount(0, {
       timeout: 6000,
     });
-    await expect(page.locator(".new-arrival")).toHaveCount(0);
-    await expect(page.getByRole("dialog")).toContainText("Northstar");
   } finally {
     await page.goto("about:blank");
     await server.close();
@@ -275,16 +327,7 @@ test("streams a confirmed source addition into the scene without moving the open
   }
 });
 
-test("offers only applied locations and never stacks city scenes during rapid changes", async ({
-  page,
-}) => {
-  const options = page.locator("#location-scene option");
-  expect(await options.allTextContents()).toEqual([
-    "Overview",
-    "Remote",
-    "Chicago",
-    "New York",
-  ]);
+test("never stacks city scenes during rapid changes", async ({ page }) => {
   const before = await page.locator(".journey-scene").boundingBox();
   await page.evaluate(() => {
     (window as any).sceneOverlap = false;
@@ -295,7 +338,7 @@ test("offers only applied locations and never stacks city scenes during rapid ch
     observer.observe(document.querySelector(".scenes")!, { childList: true });
   });
   for (const theme of ["nyc", "remote", "chicago", "nyc", "remote"]) {
-    await page.getByLabel("Background", { exact: true }).selectOption(theme);
+    await setTheme(page, theme);
     await expect(page.locator(".app")).toHaveAttribute("data-theme", theme);
   }
   await expect(page.locator(".scene")).toHaveAttribute("data-scene", "remote");
@@ -314,7 +357,7 @@ test("zooms from the globe toward a city, then pans only the background", async 
     .locator(".earth-globe > circle")
     .first()
     .getAttribute("r");
-  await page.getByLabel("Background", { exact: true }).selectOption("nyc");
+  await setTheme(page, "nyc");
   await expect(page.locator(".earth-globe")).toHaveAttribute(
     "data-camera",
     "approach",
@@ -336,13 +379,13 @@ test("zooms from the globe toward a city, then pans only the background", async 
     )
     .toBeGreaterThan(1.02);
   expect(await page.locator(".journey-scene").boundingBox()).toEqual(diagram);
-  await page.getByLabel("Background", { exact: true }).selectOption("remote");
+  await setTheme(page, "remote");
   await expect(page.locator(".earth-globe")).toHaveAttribute(
     "data-camera",
     "orbit",
   );
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.getByLabel("Background", { exact: true }).selectOption("chicago");
+  await setTheme(page, "chicago");
   await expect(page.locator(".scene")).toHaveAttribute("data-scene", "chicago");
   expect(
     await page
@@ -351,58 +394,47 @@ test("zooms from the globe toward a city, then pans only the background", async 
   ).toBe(1);
 });
 
-test("traces outcomes and stages on hover and keyboard focus without changing the data", async ({
+test("selects outcomes and stages by pointer and keyboard without changing the data", async ({
   page,
 }) => {
-  const rejection = page.getByRole("button", {
-    name: "Rejected: 3 applications",
-    exact: true,
-  });
-  await rejection.hover();
-  for (const label of await page.locator(".application-label").all()) {
-    await expect(label.locator("..")).toHaveCSS("opacity", "1");
-    await expect(label).toHaveCSS("font-size", "17px");
-  }
-  await expect(page.locator(".journey[data-highlighted=true]")).toHaveCount(3);
-  await expect(page.locator(".trace-summary")).toContainText(
-    "Last confirmed stage",
-  );
-  await expect(page.locator(".trace-summary")).toContainText(
-    "Case / technical: 1",
-  );
-  await expect(page.locator(".trace-summary")).toContainText(
-    "Hiring manager: 1",
-  );
+  // The orb's count follows the selection, so match it by name only.
+  const rejection = page.getByRole("button", { name: /^Rejected: / });
+  await rejection.click();
+  const panel = page.locator(".stage-panel");
+  await expect(panel.locator("h2")).toHaveText("Rejected");
+  await expect(panel.locator(".stage-next dt")).toContainText([
+    "Case / technical",
+    "Hiring manager",
+  ]);
+  await expect(rejection).toHaveAttribute("aria-pressed", "true");
   const recruiter = page.getByRole("button", {
     name: "Recruiter: 5 applications reached",
     exact: true,
   });
-  await page.mouse.move(5, 5);
   await recruiter.focus();
-  await expect(page.locator(".journey[data-highlighted=true]")).toHaveCount(5);
-  await expect(page.locator(".trace-summary")).toContainText(
-    "3 currently here",
+  await page.keyboard.press("Enter");
+  await expect(rejection).toHaveAttribute("aria-pressed", "false");
+  await expect(recruiter).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".journey[data-highlighted=true]")).toHaveCount(3);
+  await expect(panel).toContainText("Currently here · 3");
+  await expect(panel.locator(".stage-history summary")).toHaveText(
+    "Past applications · 2",
   );
-  await expect(page.locator(".trace-summary")).toContainText(
-    "2 passed through",
-  );
-  const northstar = page.getByRole("button", {
-    name: /Inspect Juniper Works:/,
-  });
-  await northstar.focus();
-  await expect(page.locator(".journey[data-highlighted=true]")).toHaveCount(1);
-  await expect(page.locator(".trace-summary")).toContainText("2026-09-01");
-  await northstar.press("Enter");
+  await expect(page.locator(".application-node")).toHaveCount(0);
+  await panel.getByRole("button", { name: /Inspect Juniper Works:/ }).click();
   await expect(page.getByRole("dialog")).toContainText("Juniper Works");
+  await expect(panel).toHaveCount(0);
   await expect(page.locator(".journey[data-highlighted=true]")).toHaveCount(1);
   await page.getByRole("button", { name: "Close popup" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Find an application" }).focus();
-  await page.mouse.move(5, 5);
+  await expect(panel.locator("h2")).toHaveText("Recruiter");
+  await recruiter.click();
+  await expect(panel).toHaveCount(0);
+  await expect(recruiter).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator(".journey[data-highlighted=true]")).toHaveCount(0);
 });
 
-test("aligns globe and rim at different aspect ratios and hides connections at rest", async ({
+test("aligns globe and rim at different aspect ratios and draws ribbons only for a selection", async ({
   page,
 }) => {
   await expect(page.locator(".earth-globe")).toBeVisible();
@@ -428,22 +460,34 @@ test("aligns globe and rim at different aspect ratios and hides connections at r
     expect(centers.distance).toBeLessThan(1);
   }
   await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator(".connection")).toHaveCount(0);
+  await expect(page.locator(".city-ribbon:visible")).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: "Applied: 14 applications reached",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".connection")).toHaveCount(0);
+  const nyc = page.locator('.city-ribbon[data-ribbon="nyc"]');
+  await expect(nyc).toBeVisible();
+  await expect(nyc).toHaveAttribute("data-count", /^[1-9]/);
+  const count = await nyc.getAttribute("data-count");
   await expect(
-    page.locator('[data-connection="applied:pending"]'),
-  ).toHaveAttribute("data-count", "8");
+    page.locator('.globe-city[aria-label^="New York"] text').first(),
+  ).toHaveText(count!);
   await expect(
-    page.locator('[data-connection="applied:recruiter"]'),
-  ).toHaveAttribute("data-count", "5");
-  await expect(page.locator('[data-connection="applied:pending"]')).toHaveCSS(
-    "opacity",
-    "0",
-  );
+    page.locator('.city-ribbon[data-ribbon="remote"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator(".city-ribbon .ribbon-body").first(),
+  ).toHaveAttribute("d", /^M[\d. -]+ Q[\d. -]+ [\d. -]+$/);
   await page
     .getByRole("button", {
       name: "Awaiting response: 8 applications",
       exact: true,
     })
-    .hover();
+    .click();
   for (const path of await page.locator(".trace-path").all())
     await expect(path).toHaveAttribute("opacity", "0");
 });
@@ -452,9 +496,8 @@ test("keeps passive groups compact and drills into geographic city markers", asy
   page,
 }) => {
   await expect(page.locator(".earth-globe")).toBeVisible();
-  await expect(page.locator(".application-node")).toHaveCount(3);
-  for (const link of await page.locator(".connection").all())
-    await expect(link).toHaveCSS("opacity", "0");
+  await expect(page.locator(".application-node")).toHaveCount(0);
+  await expect(page.locator(".connection")).toHaveCount(0);
   const globe = page.getByRole("slider", { name: "Rotate globe" });
   await globe.focus();
   await globe.press("ArrowLeft");
@@ -474,9 +517,6 @@ test("keeps passive groups compact and drills into geographic city markers", asy
   await expect(
     page.getByRole("button", { name: "Back to globe", exact: true }),
   ).toHaveCount(1);
-  await expect(
-    page.getByRole("button", { name: "Reset view", exact: true }),
-  ).toHaveCount(0);
   await expect(page.locator(".journey-viewport")).toHaveAttribute(
     "data-layout",
     "city",
@@ -498,37 +538,262 @@ test("keeps passive groups compact and drills into geographic city markers", asy
       nodes.map((n) => Number(n.querySelector("circle")!.getAttribute("cy"))),
     );
   expect(outcomeY.every((y) => y > Number(stageY[0]))).toBe(true);
-  for (const edge of await page.locator(".connection").all())
-    await expect(edge).toHaveCSS("opacity", "0");
+  await expect(page.locator(".connection")).toHaveCount(0);
   await expect(page.locator(".scene")).toHaveAttribute("data-scene", "nyc");
   await expect(page.locator(".earth-globe")).toHaveCount(0);
   await page.setViewportSize({ width: 1512, height: 1100 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator(".scene")).toHaveCSS("opacity", "1");
-  await page.screenshot({ path: "test-results/city-process-layout.png" });
-  await expect(page.locator(".journey")).toHaveCount(5);
+  await expect(page.locator(".geography-controls")).toContainText(
+    "New York · 5 applications",
+  );
   await page
     .getByRole("button", { name: "Explore these applications" })
     .click();
   await expect(page.locator(".search-result")).toHaveCount(5);
   await page.getByRole("button", { name: "Close popup" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.locator(".journey")).toHaveCount(5);
+  await expect(page.locator(".geography-controls")).toContainText(
+    "New York · 5 applications",
+  );
   await page.reload();
-  await expect(page.locator(".journey")).toHaveCount(5);
+  await expect(page.locator(".geography-controls")).toContainText(
+    "New York · 5 applications",
+  );
   await page
     .getByRole("button", { name: "Back to globe", exact: false })
     .click();
-  await expect(page.locator(".journey")).toHaveCount(14);
+  await expect(
+    page.getByText("14 confirmed applications", { exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".app")).toHaveAttribute("data-theme", "neutral");
   await expect(
     page.getByRole("button", { name: "Back to globe", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: /Remote · anywhere/ }).click();
-  await expect(page.locator(".journey")).toHaveCount(4);
+  await expect(page.locator(".geography-controls")).toContainText(
+    "Remote · 4 applications",
+  );
   await expect(page.locator(".journey-viewport")).toHaveAttribute(
     "data-layout",
     "globe",
   );
   await expect(page.locator(".status-rim")).toHaveCount(1);
+});
+test("a selected stage lists who is there now, keeps the past collapsed, and opens companies", async ({
+  page,
+}) => {
+  await expect(page.locator(".application-node")).toHaveCount(0);
+  await expect(page.locator(".stage-companies button")).toHaveCount(0);
+  const recruiter = page.getByRole("button", {
+    name: "Recruiter: 5 applications reached",
+    exact: true,
+  });
+  await expect(recruiter.locator("text").first()).toHaveText("5");
+  await recruiter.click();
+  const panel = page.locator(".stage-panel");
+  await expect(panel).toContainText("Currently here · 3");
+  await expect(panel).toContainText("5 reached in total");
+  await expect(page.locator('.stage-drop[data-drop="pending"]')).toHaveCount(3);
+  await expect(page.locator('.stage-drop[data-drop="rejected"]')).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Awaiting response: 3 applications" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Rejected: 0 applications" }),
+  ).toHaveCSS("opacity", "0.2");
+  await expect(
+    panel.locator(".stage-current .stage-companies button"),
+  ).toHaveCount(3);
+  await expect(panel.locator(".stage-current")).not.toContainText("Rejected");
+  const history = panel.locator(".stage-history");
+  await expect(history.locator("summary")).toHaveText("Past applications · 2");
+  await expect(history).not.toHaveAttribute("open", "");
+  await history.locator("summary").click();
+  await expect(history).toContainText("Rejected");
+  const northstar = panel.getByRole("button", { name: /Inspect Northstar:/ });
+  await northstar.hover();
+  await expect(page.locator('[data-emphasis="on"]').first()).toBeAttached();
+  await page.mouse.move(5, 5);
+  await expect(page.locator("[data-emphasis]")).toHaveCount(0);
+  await northstar.click();
+  await expect(page.getByRole("dialog")).toContainText("Northstar");
+  await expect(panel).toHaveCount(0);
+  await page.getByRole("button", { name: "Close popup", exact: true }).click();
+  await expect(panel.locator("h2")).toHaveText("Recruiter");
+  await page
+    .getByRole("button", { name: /^Hiring manager: .* applications reached$/ })
+    .click();
+  const ended = panel.locator(".stage-next div", {
+    hasText: "Ended at this stage",
+  });
+  await expect(ended.locator("dd")).toHaveText("1");
+  await expect(page.locator('.stage-drop[data-drop="rejected"]')).toHaveCount(
+    1,
+  );
+  await expect(
+    page.getByRole("button", { name: "Rejected: 1 applications" }),
+  ).toHaveCSS("opacity", "1");
+  await expect(panel).toContainText("No applications are at this stage now");
+});
+
+test("the panel keeps the globe its size and clear of it, and docks on narrow screens", async ({
+  page,
+}) => {
+  const globe = page.locator('circle[fill="url(#earth-ocean)"]');
+  for (const width of [1600, 900]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const name of ["Applied", "Recruiter", "Offer"]) {
+      const hub = page.getByRole("button", {
+        name: new RegExp(`^${name}: .* applications reached$`),
+      });
+      await hub.scrollIntoViewIfNeeded();
+      const before = await globe.boundingBox();
+      await hub.click();
+      const panel = page.locator(".stage-panel");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("h2")).toHaveText(name);
+      const after = await globe.boundingBox();
+      expect(after!.width).toBeCloseTo(before!.width, 3);
+      expect(after!.height).toBeCloseTo(before!.height, 3);
+      const box = await panel.boundingBox();
+      expect(
+        box!.x + box!.width <= after!.x ||
+          box!.x >= after!.x + after!.width ||
+          box!.y >= after!.y + after!.height,
+      ).toBe(true);
+      if (width === 1600)
+        for (const control of await page
+          .locator(".stage-hub, .rim-outcome, .remote-satellite")
+          .all()) {
+          const controlBox = await control.boundingBox();
+          expect(controlBox).not.toBeNull();
+          expect(
+            box!.x + box!.width <= controlBox!.x ||
+              box!.x >= controlBox!.x + controlBox!.width ||
+              box!.y + box!.height <= controlBox!.y ||
+              box!.y >= controlBox!.y + controlBox!.height,
+          ).toBe(true);
+        }
+      else await expect(panel).toHaveCSS("position", "fixed");
+      await hub.click();
+      await expect(panel).toHaveCount(0);
+    }
+  }
+});
+
+test("city scenes scope the same way as the globe, and motion stops under reduced motion", async ({
+  page,
+}) => {
+  const applied = page.getByRole("button", {
+    name: /^Applied: .* applications reached$/,
+  });
+  await applied.click();
+  await expect(page.locator(".ribbon-light").first()).toBeVisible();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator(".flow-light")).toHaveCount(0);
+  await expect(page.locator(".city-ribbon .ribbon-body").first()).toBeVisible();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await applied.click();
+  await setCity(page, "nyc");
+  await expect(page.locator(".connection")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: /^Recruiter: .* applications reached$/ })
+    .click();
+  await expect(page.locator(".stage-panel h2")).toHaveText("Recruiter");
+  await expect(page.locator(".city-ribbon")).toHaveCount(0);
+  await expect(page.locator(".connection")).toHaveCount(0);
+  await expect(page.locator('.stage-drop[data-drop="pending"]')).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Awaiting response: 1 applications" }),
+  ).toBeVisible();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator(".stage-drop")).toHaveCount(0);
+  await expect(page.locator(".stage-panel h2")).toHaveText("Recruiter");
+});
+
+test("a selection lights the places holding it, fades the rest, and clears cleanly", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 1100 });
+  const related = page.locator('.globe-city[data-relevance="related"]');
+  const unrelated = page.locator('.globe-city[data-relevance="unrelated"]');
+  const satellite = page.locator(".remote-satellite");
+  await page
+    .getByRole("button", {
+      name: "Recruiter: 5 applications reached",
+      exact: true,
+    })
+    .click();
+  await expect(related).toHaveCount(2);
+  await expect(unrelated).toHaveCount(0);
+  await expect(satellite).toHaveAttribute("data-relevance", "related");
+  await expect(satellite.locator(".satellite-count")).toHaveText("1");
+  await page
+    .getByRole("button", {
+      name: "Case / technical: 1 applications reached",
+      exact: true,
+    })
+    .click();
+  await expect(related).toHaveCount(0);
+  await expect(unrelated).toHaveCount(2);
+  await expect(unrelated.first()).toHaveCSS("opacity", "0.2");
+  await expect(satellite).toHaveAttribute("data-relevance", "unrelated");
+  await expect(page.locator(".stage-panel")).toContainText(
+    "No applications are at this stage now",
+  );
+  await page.getByRole("button", { name: "Back to overview" }).click();
+  await expect(page.locator('.globe-city[data-relevance="all"]')).toHaveCount(
+    2,
+  );
+  await expect(satellite).toHaveAttribute("data-relevance", "all");
+  await expect(satellite.locator(".satellite-count")).toHaveText("4");
+  await expect(page.locator(".connection")).toHaveCount(0);
+});
+
+test("initial scene loads through one stream without a duplicate snapshot download", async ({
+  page,
+}) => {
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/")) requests.push(path);
+  });
+  await page.goto("/");
+  await expect(page.locator(".earth-globe")).toBeVisible();
+  await expect(page.locator(".stage-hub")).toHaveCount(5);
+  expect(requests.filter((path) => path === "/api/events")).toHaveLength(1);
+  expect(requests.filter((path) => path === "/api/snapshot")).toHaveLength(0);
+});
+
+test("shows what landed since the last visit, with the cadence strip, and dismisses it", async ({
+  page,
+}) => {
+  await expect(page.locator(".cadence")).toBeVisible();
+  await expect(page.locator(".digest")).toHaveCount(0);
+  const workspaceId = await page.evaluate(
+    async () => (await (await fetch("/api/snapshot")).json()).workspaceId,
+  );
+  // Leaving a page with nothing pending moves the baseline to today, so plant
+  // the earlier visit after that write and before the app reads it.
+  await page.addInitScript(
+    (key) => localStorage.setItem(key, "2026-08-01"),
+    `career-atlas.looked.v1.${workspaceId}`,
+  );
+  await page.reload();
+  const digest = page.locator(".digest");
+  await expect(digest).toContainText("interview");
+  await digest.getByRole("button", { name: /^Since/ }).click();
+  await expect(page.locator(".search-result").first()).toBeVisible();
+  await page.getByRole("button", { name: "Close popup" }).click();
+  await digest.getByRole("button", { name: "Dismiss digest" }).click();
+  await expect(digest).toHaveCount(0);
+  const stored = await page.evaluate(
+    (key) => localStorage.getItem(key),
+    `career-atlas.looked.v1.${workspaceId}`,
+  );
+  expect(stored).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(stored).not.toBe("2026-08-01");
 });

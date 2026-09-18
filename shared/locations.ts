@@ -195,7 +195,9 @@ export function geographicGroups<
         : [a.theme];
     for (const place of places) {
       if (place === "neutral") continue;
-      groups.set(place, [...(groups.get(place) ?? []), a.id]);
+      const group = groups.get(place) ?? [];
+      group.push(a.id);
+      groups.set(place, group);
     }
   }
   return [...groups].map(([id, ids]) => ({

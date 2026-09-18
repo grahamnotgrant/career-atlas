@@ -1,4 +1,5 @@
-import { Globe } from "./Globe";
+import { Globe, type PlaceSignal } from "./Globe";
+import type { Point } from "./journey";
 import { AnimatePresence, motion } from "motion/react";
 import type { CSSProperties } from "react";
 import type { Theme, HomeLocation, Application } from "../shared/model";
@@ -288,20 +289,39 @@ function Artwork({ theme }: { theme: Theme }) {
       );
   }
 }
+/* The globe is drawn in its own coordinates, then placed in the 1350x800 scene. */
+const GLOBE_OFFSET = { x: 75, y: 48.75 },
+  GLOBE_SCALE = 0.75;
 export function Scene({
   theme,
   moving = true,
   home,
   applications,
+  highlightedIds = null,
+  ribbons = null,
+  emphasisId = null,
+  uplink = null,
+  signals = null,
   onCity,
 }: {
   theme: Theme;
   moving?: boolean;
   home: HomeLocation;
   applications: Application[];
+  highlightedIds?: ReadonlySet<string> | null;
+  /** Where ribbons leave from, in scene coordinates. */
+  ribbons?: { origin: Point; color: string } | null;
+  emphasisId?: string | null;
+  /** A line from a scene point to one place on the globe. */
+  uplink?: { origin: Point; place: string } | null;
+  signals?: ReadonlyMap<string, PlaceSignal> | null;
   onCity: (city: Theme, ids: string[]) => void;
 }) {
   const entry = sceneCatalog[theme];
+  const toGlobe = (point: Point) => ({
+    x: (point.x - GLOBE_OFFSET.x) / GLOBE_SCALE,
+    y: (point.y - GLOBE_OFFSET.y) / GLOBE_SCALE,
+  });
   const globe = theme === "neutral" || theme === "remote";
   return (
     <div className="scenes">
@@ -347,13 +367,30 @@ export function Scene({
             }}
             style={{ transformOrigin: "50% 72%" }}
           >
-            <title>{entry.landmark}</title>
+            {!globe && <title>{entry.landmark}</title>}
             {globe ? (
-              <g transform="translate(75 48.75) scale(.75)">
+              <g
+                transform={`translate(${GLOBE_OFFSET.x} ${GLOBE_OFFSET.y}) scale(${GLOBE_SCALE})`}
+              >
                 <Globe
                   moving={moving}
                   home={home}
                   applications={applications}
+                  highlightedIds={highlightedIds}
+                  ribbons={
+                    ribbons && {
+                      color: ribbons.color,
+                      origin: toGlobe(ribbons.origin),
+                    }
+                  }
+                  emphasisId={emphasisId}
+                  signals={signals}
+                  uplink={
+                    uplink && {
+                      place: uplink.place,
+                      origin: toGlobe(uplink.origin),
+                    }
+                  }
                   onCity={onCity}
                 />
               </g>

@@ -2,7 +2,7 @@ import { homeResolver } from "./home-location";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import staticPlugin from "@fastify/static";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { ZodError } from "zod";
@@ -12,7 +12,7 @@ export async function createApp(store: Store, staticRoot = resolve("dist")) {
   const watcher = new SourceWatcher(store);
   const home = homeResolver(store);
   await home.refresh();
-  const app = Fastify({ logger: false, bodyLimit: 16384 });
+  const app = Fastify({ logger: false, bodyLimit: 16 * 1024 * 1024 });
   await app.register(cookie);
   app.addHook("onRequest", async (req, reply) => {
     const host = req.headers.host ?? "";
@@ -71,6 +71,25 @@ export async function createApp(store: Store, staticRoot = resolve("dist")) {
   });
   app.get("/api/snapshot", () => store.snapshot());
   app.post("/api/commands", (req) => store.command(req.body));
+  app.post("/api/shutdown", async (_req, reply) => {
+    reply.send({ stopping: true });
+    setImmediate(() => {
+      void app.close();
+    });
+  });
+  app.get("/api/build", () => {
+    try {
+      const html = readFileSync(resolve(staticRoot, "index.html"), "utf8");
+      const match = html.match(
+        /<script\b[^>]*\bsrc=["'](\/assets\/[a-zA-Z0-9._-]+\.js)["']/,
+      );
+      return { module: match?.[1] ?? null };
+    } catch {
+      return { module: null };
+    }
+  });
+  app.get("/api/career", () => store.career.snapshot());
+  app.post("/api/career/commands", (req) => store.career.command(req.body));
   app.get<{ Params: { id: string } }>(
     "/api/evidence/:id/file",
     (req, reply) => {
@@ -110,7 +129,7 @@ export async function createApp(store: Store, staticRoot = resolve("dist")) {
       for (const stream of streams)
         stream.write(`event: sync\ndata: ${sync}\n\n`);
     }
-    const next = `${store.meta("generation", "0")}:${store.getView().revision}:${store.meta("homeLocation", "")}`;
+    const next = `${store.meta("generation", "0")}:${store.getView().revision}:${store.meta("homeLocation", "")}:${store.career.revision()}`;
     if (next !== stamp) {
       stamp = next;
       const data = `event: snapshot\ndata: ${JSON.stringify(store.snapshot())}\n\n`;

@@ -1,18 +1,25 @@
-import { availableScenes, geographicGroups } from "../shared/locations";
+import { geographicGroups } from "../shared/locations";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   statusLabels,
   themeLabels,
   type Application,
-  type Evidence,
-  type View,
+  type Theme,
 } from "../shared/model";
 import { useWorkspace, useMedia } from "./useWorkspace";
 import { JourneyScene } from "./JourneyScene";
-import { Atmosphere } from "./Atmosphere";
+import { Scene } from "./Scene";
 import { Popup } from "./Popup";
-import { cleanDisplay, shortLocation } from "./journey";
+import { CareerPanel } from "./CareerPanel";
+import {
+  cleanDisplay,
+  shortLocation,
+  eventGaps,
+  sinceDigest,
+  today,
+} from "./journey";
+import { Cadence } from "./Cadence";
 import "./style.css";
 const PdfDocument = lazy(() =>
   import("./PdfDocument").then((m) => ({ default: m.PdfDocument })),
@@ -27,11 +34,62 @@ const formatDate = (value: string | null) =>
       }).format(new Date(value + "T12:00:00Z"))
     : "Date not established";
 function App() {
-  const { snapshot, error, clearError, connected, command, newIds } =
-    useWorkspace();
+  const {
+    snapshot,
+    error,
+    clearError,
+    connected,
+    command,
+    careerCommand,
+    newIds,
+    pendingArrivalIds,
+    playArrivals,
+    pauseArrivals,
+  } = useWorkspace();
+  const [careerTab, setCareerTab] = useState<
+    "roles" | "records" | "analysis" | null
+  >(null);
+  /* The digest compares dated events against the day of the previous visit,
+     kept per workspace in this browser only. The day moves forward when the
+     digest is dismissed, or when a visit ends with nothing left to show, so
+     a reload never hides what you have not looked at. */
+  const [lastLooked, setLastLooked] = useState<string | null>(null);
+  const digestPending = useRef(false);
+  const lookedKey = snapshot?.workspaceId
+    ? `career-atlas.looked.v1.${snapshot.workspaceId}`
+    : null;
+  const remember = (day: string) => {
+    try {
+      if (lookedKey) localStorage.setItem(lookedKey, day);
+    } catch {
+      /* Private mode: the digest is simply unavailable. */
+    }
+  };
+  useEffect(() => {
+    if (!lookedKey) return;
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(lookedKey);
+    } catch {
+      /* See above. */
+    }
+    if (!stored) remember(today());
+    setLastLooked(stored);
+    const leave = () => {
+      if (!digestPending.current) remember(today());
+    };
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [lookedKey]);
+  const markLooked = () => {
+    remember(today());
+    setLastLooked(null);
+  };
   const [search, setSearch] = useState(""),
     [sourceInfo, setSourceInfo] = useState(false),
     [visible, setVisible] = useState(!document.hidden);
+  const mainRef = useRef<HTMLElement>(null);
+  const [arrivalAreaVisible, setArrivalAreaVisible] = useState(false);
   const reduced = useMedia("(prefers-reduced-motion: reduce)");
   const input = useRef<HTMLInputElement>(null),
     searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -74,6 +132,35 @@ function App() {
   }, [command]);
   const applications = snapshot?.applications ?? [],
     v = view;
+  const cityGroups = useMemo(
+    () => geographicGroups(applications),
+    [applications],
+  );
+  const cityIds = useMemo(
+    () =>
+      v?.city
+        ? new Set(cityGroups.find((g) => g.id === v.city)?.ids ?? [])
+        : null,
+    [cityGroups, v?.city],
+  );
+  const flowIds = useMemo(
+    () => (v?.flowIds ? new Set(v.flowIds) : null),
+    [v?.flowIds],
+  );
+  const [resultLimit, setResultLimit] = useState(60);
+  useEffect(() => setResultLimit(60), [search, v?.city, v?.flowIds, v?.status]);
+  const roleIds = useMemo(() => {
+    if (!v?.roleFamilyId || !snapshot?.career) return null;
+    return new Set(
+      snapshot.career.opportunities
+        .filter((o) =>
+          v.roleFamilyId === "unmatched"
+            ? !o.roleFamilyId
+            : o.roleFamilyId === v.roleFamilyId,
+        )
+        .flatMap((o) => (o.applicationId ? [o.applicationId] : [])),
+    );
+  }, [snapshot?.career, v?.roleFamilyId]);
   const matches = useMemo(
     () =>
       applications.filter(
@@ -82,14 +169,83 @@ function App() {
             .toLowerCase()
             .includes(search.toLowerCase().trim()) &&
           (!v || v.status === "all" || v.status === a.status) &&
-          (!v?.flowIds || v.flowIds.includes(a.id)) &&
-          (!v?.city ||
-            geographicGroups(applications)
-              .find((g) => g.id === v.city)
-              ?.ids.includes(a.id)),
+          (!flowIds || flowIds.has(a.id)) &&
+          (!cityIds || cityIds.has(a.id)) &&
+          (!roleIds || roleIds.has(a.id)),
       ),
-    [applications, search, v?.status, v?.flowIds, v?.city],
+    [applications, search, v?.status, flowIds, cityIds, roleIds],
   );
+  const visibleApplications = useMemo(
+    () =>
+      applications.filter(
+        (a) =>
+          (!cityIds || cityIds.has(a.id)) && (!roleIds || roleIds.has(a.id)),
+      ),
+    [applications, cityIds, roleIds],
+  );
+  useEffect(() => {
+    setArrivalAreaVisible(false);
+    if (!snapshot || !mainRef.current) return;
+    const targets = [
+      mainRef.current.querySelector('.stage-hub[aria-label^="Applied:"]'),
+      mainRef.current.querySelector(
+        '.rim-outcome[aria-label^="Awaiting response:"]',
+      ),
+    ].filter((node): node is Element => !!node);
+    if (targets.length !== 2) return;
+    const visibleTargets = new Map<Element, boolean>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          visibleTargets.set(
+            entry.target,
+            entry.isIntersecting && entry.intersectionRatio >= 0.9,
+          );
+        setArrivalAreaVisible(
+          targets.every((target) => visibleTargets.get(target)),
+        );
+      },
+      { threshold: [0, 0.9, 1] },
+    );
+    for (const target of targets) observer.observe(target);
+    return () => observer.disconnect();
+  }, [Boolean(snapshot), v?.theme]);
+  const arrivalEligibleKey = matches
+    .filter((a) => a.status === "pending")
+    .map((a) => a.id)
+    .join("|");
+  const canPlayArrivals =
+    visible &&
+    arrivalAreaVisible &&
+    !!v?.motion &&
+    !careerTab &&
+    !sourceInfo &&
+    !v?.selectedId &&
+    !v?.list &&
+    !v?.evidenceId;
+  useEffect(() => {
+    const eligible = arrivalEligibleKey ? arrivalEligibleKey.split("|") : [];
+    if (!canPlayArrivals || newIds.some((id) => !eligible.includes(id)))
+      pauseArrivals();
+    else playArrivals(eligible);
+  }, [
+    canPlayArrivals,
+    arrivalEligibleKey,
+    pendingArrivalIds.join("|"),
+    newIds.join("|"),
+    playArrivals,
+    pauseArrivals,
+  ]);
+  async function watchArrivals() {
+    setCareerTab(null);
+    setSourceInfo(false);
+    await command("reset");
+    await command("motion", { enabled: true });
+    mainRef.current?.querySelector(".journey-viewport")?.scrollIntoView({
+      block: "center",
+      behavior: reduced ? "auto" : "smooth",
+    });
+  }
   async function select(id: string) {
     clearTimeout(searchTimer.current);
     if (snapshot?.view.list && search !== snapshot.view.query)
@@ -100,7 +256,7 @@ function App() {
     return (
       <main className="loading">
         <span className="wordmark">
-          career<span>flow</span>
+          career<span>atlas</span>
         </span>
         <p>{error || "Opening your local workspace…"}</p>
         {error && <button onClick={() => location.reload()}>Reconnect</button>}
@@ -109,20 +265,50 @@ function App() {
   const selected = applications.find((a) => a.id === v.selectedId),
     evidence = selected?.evidence.find((e) => e.id === v.evidenceId),
     moving = v.motion && !reduced && visible;
-  const cityGroups = geographicGroups(applications);
   const geography = v.city
     ? cityGroups.find((g) => g.id === v.city)
     : undefined;
-  const visibleApplications = geography
-    ? applications.filter((a) => geography.ids.includes(a.id))
-    : applications;
-  async function goCity(city: import("../shared/model").Theme, ids: string[]) {
+  const syncProblem = !connected
+    ? "Reconnecting"
+    : snapshot.sync.enabled && snapshot.sync.state === "error"
+      ? "Source needs attention"
+      : null;
+  async function goCity(city: Theme) {
     await command("location", { city });
   }
   const asOf = applications.reduce(
     (day, a) => (a.asOf > day ? a.asOf : day),
     "",
   );
+  const digest = lastLooked ? sinceDigest(applications, lastLooked) : null;
+  const digestParts = digest
+    ? [
+        [digest.offers.length, "offer"],
+        [digest.interviews.length, "interview"],
+        [digest.invitations.length, "invitation"],
+        [digest.rejected.length, "rejection"],
+        [digest.closed.length, "closed"],
+      ]
+        .filter(([n]) => n)
+        .map(
+          ([n, word]) =>
+            `${n} ${word}${n === 1 || word === "closed" ? "" : "s"}`,
+        )
+    : [];
+  digestPending.current = digestParts.length > 0;
+  const digestIds = digest
+    ? [
+        ...new Set(
+          [
+            ...digest.offers,
+            ...digest.interviews,
+            ...digest.invitations,
+            ...digest.rejected,
+            ...digest.closed,
+          ].map((a) => a.id),
+        ),
+      ]
+    : [];
   const title =
     evidence?.label ??
     (selected
@@ -141,40 +327,50 @@ function App() {
       data-theme={v.theme}
       data-revision={v.revision}
     >
-      <main id="scene-workspace">
+      <main id="scene-workspace" ref={mainRef}>
         <header className="scene-header">
           <div className="heading">
             <span className="wordmark">
-              career<span>flow</span>
-              <i />
+              career<span>atlas</span>
             </span>
-            <h1>
-              Your search, <em>in motion.</em>
-            </h1>
-            <p>Real applications. Recorded journeys.</p>
           </div>
+          <button
+            className="search-trigger"
+            onClick={() => void command("list", { enabled: true })}
+          >
+            <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+              <circle cx="10" cy="10" r="6" />
+              <path d="m15 15 6 6" />
+            </svg>
+            <span>Find an application</span>
+            <kbd>⌘ K</kbd>
+          </button>
           <div className="top-controls">
             <button
-              className="search-trigger"
-              onClick={() => void command("list", { enabled: true })}
+              className="quiet-button"
+              onClick={() => setCareerTab("roles")}
             >
-              <svg
-                viewBox="0 0 24 24"
-                width="17"
-                height="17"
-                aria-hidden="true"
-              >
-                <circle cx="10" cy="10" r="6" />
-                <path d="m15 15 6 6" />
-              </svg>
-              <span>Find an application</span>
-              <kbd>⌘ K</kbd>
+              Top roles
+            </button>
+            <button
+              className="quiet-button"
+              onClick={() => setCareerTab("records")}
+            >
+              All records
+            </button>
+            <button
+              className="quiet-button"
+              onClick={() => setCareerTab("analysis")}
+            >
+              Outcomes
             </button>
           </div>
         </header>
         <div className="scene-utility">
           <div className="navigation">
-            {(v.theme !== "neutral" || v.city !== null) && (
+            {(v.theme !== "neutral" ||
+              v.city !== null ||
+              v.roleFamilyId !== null) && (
               <button
                 className="quiet-button"
                 onClick={() => void command("reset")}
@@ -190,22 +386,6 @@ function App() {
               </span>
             )}
           </div>
-          <div className="scene-location">
-            <label htmlFor="location-scene">Background</label>
-            <select
-              id="location-scene"
-              value={v.theme}
-              onChange={(e) => void command("theme", { theme: e.target.value })}
-              title="Background only. Selecting an application follows its location."
-            >
-              <option value="neutral">Overview</option>
-              {availableScenes(applications).map((id) => (
-                <option key={id} value={id}>
-                  {themeLabels[id]}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
         {error && (
           <div className="error-toast" role="alert">
@@ -213,55 +393,53 @@ function App() {
             <button onClick={clearError}>Dismiss</button>
           </div>
         )}
-        <div className="geography-controls">
-          {geography ? (
-            <>
-              <strong>
-                {geography.label} · {visibleApplications.length} applications
+        {(v.roleFamilyId || geography) && (
+          <div className="geography-controls">
+            {v.roleFamilyId && (
+              <strong className="selected-role">
+                {v.roleFamilyId === "unmatched"
+                  ? "Unmatched roles"
+                  : snapshot.career.families.find(
+                      (f) => f.id === v.roleFamilyId,
+                    )?.name}{" "}
+                · {visibleApplications.length} applied
               </strong>
-              <button
-                onClick={() => void command("flow", { ids: geography.ids })}
-              >
-                Explore these applications
-              </button>
-            </>
-          ) : (
-            <>
-              <span>
-                Drag the globe or use arrow keys to explore locations.
-              </span>
-              {cityGroups.find((g) => g.id === "remote") && (
+            )}
+            {geography ? (
+              <>
+                <strong>
+                  {geography.label} · {visibleApplications.length} applications
+                </strong>
                 <button
-                  onClick={() =>
-                    void goCity(
-                      "remote",
-                      cityGroups.find((g) => g.id === "remote")!.ids,
-                    )
-                  }
+                  onClick={() => void command("flow", { ids: geography.ids })}
                 >
-                  Remote · anywhere ·{" "}
-                  {cityGroups.find((g) => g.id === "remote")!.ids.length}
+                  Explore these applications
                 </button>
-              )}
-            </>
-          )}
-        </div>
+              </>
+            ) : null}
+          </div>
+        )}
         <JourneyScene
-          background={
-            <Atmosphere
+          background={(selection) => (
+            <Scene
               theme={v.theme}
               moving={moving}
               home={snapshot.homeLocation}
               applications={applications}
+              {...selection}
               onCity={goCity}
             />
-          }
+          )}
           applications={visibleApplications}
+          places={cityGroups}
+          onPlace={(id) => void goCity(id as Theme)}
+          onSelection={(selection) => void command("selection", { selection })}
+          onCloseSilent={(ids) => void command("close-silent", { ids })}
+          suppressDetails={Boolean(careerTab || openPopup || sourceInfo)}
           view={v}
           moving={moving}
           newIds={newIds}
           onSelect={(id) => void select(id)}
-          onGroup={(ids) => void command("flow", { ids })}
           query={search}
         />
         {applications.length === 0 && (
@@ -289,7 +467,12 @@ function App() {
               )}
             </button>
             <div>
-              <strong>{applications.length} applications</strong>
+              <strong>{applications.length} confirmed applications</strong>
+              {snapshot.career && (
+                <span>
+                  {snapshot.career.opportunities.length} tracked records
+                </span>
+              )}
               <span>
                 {asOf
                   ? `Evidence through ${formatDate(asOf)}`
@@ -297,45 +480,82 @@ function App() {
               </span>
             </div>
           </div>
-          <div className="scene-legend">
-            <span>
-              <i /> Dots are applications
-            </span>
-            <span>Light follows recorded paths, not future progress.</span>
+          {!geography && (
+            <div className="globe-hint">
+              Select a stage to see where those applications are. Drag the globe
+              or use arrow keys to turn it.
+            </div>
+          )}
+          <div className="scene-status">
+            <Cadence applications={applications} />
+            {digestParts.length > 0 && (
+              <div className="digest" role="status">
+                <button
+                  className="quiet-button"
+                  onClick={() => void command("flow", { ids: digestIds })}
+                >
+                  Since {formatDate(lastLooked)}: {digestParts.join(", ")}
+                </button>
+                <button
+                  className="quiet-button digest-dismiss"
+                  aria-label="Dismiss digest"
+                  onClick={markLooked}
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            {pendingArrivalIds.length > 0 && (
+              <button
+                className="quiet-button"
+                onClick={() => void watchArrivals()}
+              >
+                Watch {pendingArrivalIds.length} new{" "}
+                {pendingArrivalIds.length === 1
+                  ? "application"
+                  : "applications"}
+              </button>
+            )}
+            {syncProblem && (
+              <button
+                className="sync-status"
+                onClick={() => setSourceInfo(true)}
+              >
+                <i />
+                <span>{syncProblem}</span>
+              </button>
+            )}
           </div>
-          <button
-            className={`sync-status ${connected ? "connected" : ""}`}
-            onClick={() => setSourceInfo(true)}
-          >
-            <i />
-            <span>
-              {!connected
-                ? "Reconnecting"
-                : snapshot.sync.enabled
-                  ? snapshot.sync.state === "error"
-                    ? "Source needs attention"
-                    : "Watching application list"
-                  : "Saved on this device"}
-              <small>
-                {snapshot.sync.enabled
-                  ? "Checks every 2 seconds"
-                  : "Local workspace"}
-              </small>
-            </span>
-          </button>
         </div>
-        <p className="mobile-hint">
-          Pan the scene to follow a path, or use Find an application.
-        </p>
       </main>
-      {sourceInfo ? (
+      {careerTab && snapshot.career ? (
+        <CareerPanel
+          key={careerTab}
+          initial={careerTab}
+          career={snapshot.career}
+          applications={applications}
+          onClose={() => setCareerTab(null)}
+          command={careerCommand}
+          onSelect={(id) => {
+            setCareerTab(null);
+            void select(id);
+          }}
+          onEvidence={(applicationId, evidenceId) => {
+            setCareerTab(null);
+            void (async () => {
+              await command("select", { id: applicationId });
+              await command("document", { id: evidenceId });
+            })();
+          }}
+          onRole={(id) => {
+            setCareerTab(null);
+            void command("role", { id });
+          }}
+        />
+      ) : sourceInfo ? (
         <Popup title="Source updates" onClose={() => setSourceInfo(false)}>
           <div className="popup-body source-info">
-            <h2>
-              {snapshot.sync.enabled
-                ? "Watching your application list"
-                : "Local workspace"}
-            </h2>
+            <h2>{snapshot.sync.enabled ? "Sources" : "Local workspace"}</h2>
             <p>{snapshot.sync.message}</p>
             {snapshot.sync.checkedAt && (
               <p>
@@ -350,10 +570,6 @@ function App() {
                 : snapshot.homeLocation.status === "conflict"
                   ? "Resume headers name different home locations. Globe center is unset."
                   : "No confirmed home location in the imported resume headers. Globe center is unset."}
-            </p>
-            <p>
-              Updates preserve your selection and open document. Historical
-              reconciliation is a separate step.
             </p>
           </div>
         </Popup>
@@ -452,7 +668,7 @@ function App() {
                   )}
                 </div>
                 <div className="search-results">
-                  {matches.map((a) => (
+                  {matches.slice(0, resultLimit).map((a) => (
                     <button
                       key={a.id}
                       className="search-result"
@@ -469,6 +685,14 @@ function App() {
                       <span aria-hidden="true">↗</span>
                     </button>
                   ))}
+                  {matches.length > resultLimit && (
+                    <button
+                      className="load-more"
+                      onClick={() => setResultLimit((n) => n + 60)}
+                    >
+                      Show more ({matches.length - resultLimit} remaining)
+                    </button>
+                  )}
                   {matches.length === 0 && (
                     <div className="empty-results">
                       <h2>No applications here yet</h2>
@@ -503,6 +727,8 @@ function ApplicationCard({
       (e) => e.kind === "resume" || e.kind === "feedback",
     ),
     other = a.evidence.filter((e) => !docs.includes(e));
+  const submittedResumes = docs.filter((e) => e.kind === "resume" && e.file);
+  const gaps = eventGaps(a);
   return (
     <div className="popup-body application-card">
       <span className="eyebrow">{shortLocation(a.location)}</span>
@@ -511,17 +737,56 @@ function ApplicationCard({
       <span className={`status-label ${a.status}`}>
         {statusLabels[a.status]}
       </span>
-      <div className="document-shortcuts">
-        {docs.map((e) => (
-          <button key={e.id} onClick={() => onDocument(e.id)}>
-            {e.kind === "resume" ? "Resume" : "Employer feedback"} ↗
-          </button>
-        ))}
-      </div>
+      <section
+        className="submitted-materials"
+        aria-label="Application documents"
+      >
+        <div className="document-shortcuts">
+          {submittedResumes.map((e, index) => (
+            <button
+              className="submitted-resume"
+              key={e.id}
+              onClick={() => onDocument(e.id)}
+            >
+              Resume used to apply
+              {submittedResumes.length > 1 ? ` · ${index + 1}` : ""} ↗
+              <small>{e.label}</small>
+            </button>
+          ))}
+          {docs
+            .filter((e) => e.kind === "feedback")
+            .map((e) => (
+              <button key={e.id} onClick={() => onDocument(e.id)}>
+                Employer feedback ↗
+              </button>
+            ))}
+        </div>
+        {submittedResumes.length === 0 && (
+          <p className="missing-resume">
+            No resume file found for this application.
+          </p>
+        )}
+        {docs
+          .filter((e) => e.kind === "resume" && !e.file)
+          .map((e) => (
+            <button
+              className="inline-link"
+              key={e.id}
+              onClick={() => onDocument(e.id)}
+            >
+              Resume notes ↗
+            </button>
+          ))}
+      </section>
       <ol className="timeline">
-        {a.events.map((e) => (
+        {a.events.map((e, i) => (
           <li key={e.id}>
-            <time>{formatDate(e.date)}</time>
+            <time>
+              {formatDate(e.date)}
+              {gaps[i] !== null && gaps[i]! > 0 && (
+                <small className="event-gap">+{gaps[i]} days</small>
+              )}
+            </time>
             <strong>{e.label}</strong>
             <p>{e.detail}</p>
             {e.evidenceIds.length > 0 && (
