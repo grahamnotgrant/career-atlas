@@ -37,6 +37,21 @@ describe("portable onboarding contract", () => {
     ])
       expect(existsSync(name)).toBe(true);
     expect(entry).toContain("single agent");
+    // Onboarding order: intake, the evidence conversation, roles the user approves, templates, authorization.
+    const onboarding = readFileSync("docs/ONBOARDING.md", "utf8");
+    const order = [
+      "current resume",
+      "uncover-evidence",
+      "10–20 ranked roles",
+      "build-role-templates",
+      "application authorization",
+    ].map((s) => onboarding.indexOf(s));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const evidence = readFileSync("skills/uncover-evidence/SKILL.md", "utf8");
+    expect(evidence).toContain("facts.md");
+    expect(evidence).toMatch(/voice/i);
+    expect(evidence).toContain("Never require a voice tool");
   });
   it("starts a clean session without invented experience, authorization or applications", () => {
     const dir = mkdtempSync(join(tmpdir(), "atlas-onboard-"));

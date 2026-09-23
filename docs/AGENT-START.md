@@ -22,7 +22,7 @@ An agent started outside this repository must be given its checkout path and tol
 
 ## Onboard
 
-Follow `ONBOARDING.md` and `skills/discover-direction/SKILL.md`.
+Follow `ONBOARDING.md` in this order: intake (`skills/discover-direction`, steps 1–2), the experience conversation and facts file (`skills/uncover-evidence`, voice suggested), the recommended 10–20 roles the user approves (`skills/discover-direction`, step 4), resume critique and approved templates (`skills/build-role-templates`), then authorization.
 
 - Establish desired duties, exclusions, compensation basis and floor, locations, work arrangements and the history period to import.
 - Read the user's supplied resumes and source evidence. Distinguish a home location from work-location requirements. A remote role may still require a particular city, state, country or time zone; preserve the employer's wording and whether it is required, preferred or unknown.

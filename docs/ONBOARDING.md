@@ -26,10 +26,11 @@ The setup command initializes the database, creates private artifact/session/tem
 Give Codex or Claude this repository and ask it to read `AGENTS.md`. The agent should:
 
 1. Explain the data folder and sharing boundaries in `PRIVACY.md`.
-2. Inventory resumes, application trackers and available source/browser/document tools. Ask before reading unrelated files or accounts.
-3. Run `skills/discover-direction/SKILL.md`. Save progress after each question so the next conversation can resume.
-4. Review resume evidence and produce up to 20 ranked target role families. Save explicit uncertainty rather than guessing.
-5. Critique and build approved resume templates. Then ask for individual or bounded batch application authorization.
+2. Get the current resume, and what the person enjoys, wants and wants to avoid. Inventory application trackers and available source/browser/document tools. Ask before reading unrelated files or accounts. Start `skills/discover-direction/SKILL.md` and save progress after each question so the next conversation can resume.
+3. Run the experience conversation in `skills/uncover-evidence/SKILL.md`: thorough, one follow-up at a time, voice suggested when a voice tool exists. It produces the facts file every later claim cites.
+4. Recommend 10–20 ranked roles the person should be applying for, from everything discussed, each citing facts. The user edits and approves the list; it becomes the role families.
+5. Critique the current resume, then build one template per approved family from it (`skills/build-role-templates/SKILL.md`), with the `stop-slop` pass, and get each exact version approved.
+6. Ask for individual or bounded batch application authorization. Agents then scout (`skills/scout-roles/SKILL.md`) and apply (`skills/run-search/SKILL.md`), tailoring each application from the approved template without adding claims.
 
 The user can use one agent for this workflow. A browser connector is needed for applications the employer accepts through a web form. The app does not bundle access to email accounts or external AI providers.
 
