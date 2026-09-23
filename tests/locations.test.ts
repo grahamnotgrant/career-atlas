@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applicationScene,
   availableScenes,
+  cityCoordinates,
   scenesForLocation,
   sceneCatalog,
   sceneIds,
@@ -38,7 +39,7 @@ describe("application location scenes", () => {
       ]),
     ).toEqual(["remote", "miami", "nyc", "san-diego"]);
     expect(availableScenes([])).toEqual([]);
-    expect(scenesForLocation("Portland, OR")).toEqual([]);
+    expect(scenesForLocation("Portland, OR")).toEqual(["portland"]);
     expect(scenesForLocation("Platform Engineer, US")).toEqual([]);
     expect(
       applicationScene({ location: "Unspecified", theme: "chicago" }),
@@ -48,4 +49,32 @@ describe("application location scenes", () => {
     expect(sceneCatalog.remote.landmark).toBe(sceneCatalog.neutral.landmark);
     for (const id of sceneIds) expect(themeSchema.parse(id)).toBe(id);
   });
+});
+
+it("every catalog city has coordinates and an alias pattern that does not claim another city", () => {
+  const cities = sceneIds.filter((id) => id !== "neutral" && id !== "remote");
+  expect(cities.length).toBeGreaterThanOrEqual(64);
+  const labels = new Set<string>();
+  for (const id of cities) {
+    expect(cityCoordinates[id], id).toBeDefined();
+    const [lon, lat] = cityCoordinates[id]!;
+    expect(Math.abs(lon)).toBeLessThanOrEqual(180);
+    expect(Math.abs(lat)).toBeLessThanOrEqual(90);
+    expect(sceneCatalog[id].match, id).toBeDefined();
+    expect(labels.has(sceneCatalog[id].label), id).toBe(false);
+    labels.add(sceneCatalog[id].label);
+    // A city's own label must match itself and no other city's pattern.
+    expect(scenesForLocation(sceneCatalog[id].label), id).toContain(id);
+    const others = scenesForLocation(sceneCatalog[id].label).filter(
+      (x) => x !== id,
+    );
+    expect(others, `${id} label also matches ${others.join(",")}`).toEqual([]);
+  }
+  expect(scenesForLocation("Washington, DC")).toEqual(["washington-dc"]);
+  expect(scenesForLocation("Arlington, VA")).toEqual(["washington-dc"]);
+  expect(scenesForLocation("Seattle, Washington")).toEqual(["seattle"]);
+  expect(scenesForLocation("Bengaluru, India")).toEqual(["bangalore"]);
+  expect(scenesForLocation("Portland, ME")).toEqual([]);
+  expect(scenesForLocation("Dublin, CA")).toEqual([]);
+  expect(scenesForLocation("Vancouver, WA")).toEqual([]);
 });

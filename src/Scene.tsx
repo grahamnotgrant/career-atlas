@@ -40,6 +40,30 @@ function Water() {
     </g>
   );
 }
+/* Cities without drawn landmarks share a skyline whose shape and a single
+   tower are picked from the city id, so each still looks like its own place. */
+function GenericCity({ theme }: { theme: Theme }) {
+  const seed = [...theme].reduce(
+    (n, ch) => (n * 31 + ch.charCodeAt(0)) % 997,
+    7,
+  );
+  const variant = 14 + (seed % 11);
+  const x = 240 + (seed % 5) * 60,
+    h = 220 + (seed % 7) * 22;
+  return (
+    <>
+      <Skyline variant={variant} />
+      <path
+        d={`M${x} 580V${580 - h}h22V${580 - h - 40}h6V${580 - h}h22V580Z`}
+      />
+      <path
+        className="architectural-line"
+        d={`M${x + 11} ${600 - h}V560m28-${h - 20}V560`}
+      />
+      {seed % 2 === 0 && <Water />}
+    </>
+  );
+}
 function Artwork({ theme }: { theme: Theme }) {
   switch (theme) {
     case "neutral":
@@ -288,6 +312,8 @@ function Artwork({ theme }: { theme: Theme }) {
           </g>
         </>
       );
+    default:
+      return <GenericCity theme={theme} />;
   }
 }
 /* The globe is drawn in its own coordinates, then placed in the 1350x800 scene. */

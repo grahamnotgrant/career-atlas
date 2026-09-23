@@ -210,7 +210,7 @@ test("restores the view with an empty browser profile and makes no external requ
   await context.close();
 });
 test("checks text contrast across all location scenes", async ({ page }) => {
-  test.setTimeout(60000); // Eighteen complete Axe scans plus camera transitions.
+  test.setTimeout(300000); // One complete Axe scan per catalog scene plus camera transitions.
   for (const scene of sceneIds) {
     await page.evaluate(async (theme) => {
       const state = await (await fetch("/api/snapshot")).json();

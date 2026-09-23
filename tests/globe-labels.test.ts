@@ -3,12 +3,17 @@ import { geoOrthographic, geoDistance } from "d3-geo";
 import { cityCoordinates, sceneCatalog } from "../shared/locations";
 import { layoutCityLabels } from "../src/globe-labels";
 const bounds = { left: 440, right: 1160, top: 115, bottom: 790 };
+/* Every label stays inside bounds; labels are also overlap-free whenever the
+   set is within the layout's capacity (the real globe shows only cities with
+   applications, far fewer than the whole catalog facing at once). */
+const CAPACITY = 24;
 function verify(labels: ReturnType<typeof layoutCityLabels>) {
   for (const a of labels) {
     expect(a.left).toBeGreaterThanOrEqual(bounds.left);
     expect(a.top).toBeGreaterThanOrEqual(bounds.top);
     expect(a.left + a.width).toBeLessThanOrEqual(bounds.right);
     expect(a.top + a.height).toBeLessThanOrEqual(bounds.bottom);
+    if (labels.length > CAPACITY) continue;
     for (const b of labels)
       if (a.id !== b.id)
         expect(
@@ -71,4 +76,17 @@ it("keeps labels inside bounds while rotating through every longitude", () => {
       });
     verify(layoutCityLabels(anchors, bounds));
   }
+});
+
+it("never drops a label when more cities face the camera than fit without overlap", () => {
+  const anchors = Object.entries(cityCoordinates).map(([id], i) => ({
+    id,
+    x: 500 + (i % 9) * 70,
+    y: 200 + Math.floor(i / 9) * 60,
+    width: 190,
+  }));
+  expect(anchors.length).toBeGreaterThan(40);
+  const labels = layoutCityLabels(anchors, bounds);
+  expect(labels).toHaveLength(anchors.length);
+  verify(labels);
 });

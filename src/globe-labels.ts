@@ -18,7 +18,9 @@ export interface LabelBounds {
   bottom: number;
 }
 /** Place one compact label per visible geographic anchor. Stable ordering and a
- * bounded grid fallback make dense clusters deterministic without hiding cities. */
+ * bounded grid fallback make dense clusters deterministic without hiding cities.
+ * Labels stay overlap-free up to the bounds' capacity (about two dozen at the
+ * globe's size); beyond that they overlap minimally instead of disappearing. */
 export function layoutCityLabels(
   anchors: CityAnchor[],
   bounds: LabelBounds,
@@ -70,10 +72,42 @@ export function layoutCityLabels(
           left += width + gap
         )
           add(left, top);
-    // The scene has at most sixteen catalog cities and space for many more rows.
-    // A caller with a smaller viewport receives an explicit overflow error.
-    if (!candidates.length)
-      throw new Error("City label bounds cannot fit all labels.");
+    // Past capacity (dozens of facing cities), a label still gets the ring
+    // position that overlaps the least rather than the globe losing it.
+    if (!candidates.length) {
+      let best: { left: number; top: number; score: number } | null = null;
+      for (let ring = 0; ring < 10; ring++)
+        for (const sign of ring === 0 ? [1] : [-1, 1])
+          for (const left of [anchor.x + 14, anchor.x - width - 14]) {
+            const l = Math.max(
+                bounds.left,
+                Math.min(bounds.right - width, left),
+              ),
+              t = Math.max(
+                bounds.top,
+                Math.min(
+                  bounds.bottom - height,
+                  anchor.y - height / 2 + sign * ring * (height + gap),
+                ),
+              );
+            const crowd = placed.reduce(
+              (n, q) =>
+                n +
+                Math.max(
+                  0,
+                  Math.min(l + width, q.left + q.width) - Math.max(l, q.left),
+                ) *
+                  Math.max(
+                    0,
+                    Math.min(t + height, q.top + q.height) - Math.max(t, q.top),
+                  ),
+              0,
+            );
+            const score = crowd + Math.hypot(l - anchor.x, t - anchor.y) / 1000;
+            if (!best || score < best.score) best = { left: l, top: t, score };
+          }
+      candidates.push(best!);
+    }
     candidates.sort(
       (a, b) => a.score - b.score || a.top - b.top || a.left - b.left,
     );
