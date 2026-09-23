@@ -347,7 +347,7 @@ export function Scene({
   signals?: ReadonlyMap<string, PlaceSignal> | null;
   onCity: (city: Theme, ids: string[]) => void;
 }) {
-  const entry = sceneCatalog[theme];
+  const entry = sceneCatalog[theme] ?? sceneCatalog.neutral;
   const toGlobe = (point: Point) => ({
     x: (point.x - GLOBE_OFFSET.x) / GLOBE_SCALE,
     y: (point.y - GLOBE_OFFSET.y) / GLOBE_SCALE,

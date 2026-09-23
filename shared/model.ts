@@ -1,5 +1,5 @@
 import type { CareerState } from "./career";
-import { sceneIds, sceneCatalog } from "./locations";
+import { isScene, sceneCatalog } from "./locations";
 import { z } from "zod";
 export const stageSchema = z.enum([
   "applied",
@@ -15,7 +15,12 @@ export const statusSchema = z.enum([
   "closed",
   "offer",
 ]);
-export const themeSchema = z.enum(sceneIds);
+/** A built-in scene or a city registered at runtime; see registerCities. */
+export const themeSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .refine(isScene, "Unknown scene");
 /** What the scene shows as an outcome. `noreply` is derived, never stored:
     a pending application silent for 30 days or more. */
 export const outcomeSchema = z.enum([
@@ -205,9 +210,9 @@ export const stageLabels: Record<Stage, string> = {
   case: "Case / technical",
   offer: "Offer",
 };
-export const themeLabels = Object.fromEntries(
-  sceneIds.map((id) => [id, sceneCatalog[id].label]),
-) as Record<Theme, string>;
+export function themeLabel(theme: string) {
+  return sceneCatalog[theme]?.label ?? theme;
+}
 export function filtered(apps: Application[], v: View) {
   const q = v.query.toLowerCase().trim();
   return apps.filter(

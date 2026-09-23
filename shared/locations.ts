@@ -1,3 +1,4 @@
+import { z } from "zod";
 /** Local scene catalog. Add a catalog entry and matching Scene artwork together. */
 export const sceneIds = [
   "neutral",
@@ -68,10 +69,15 @@ export const sceneIds = [
   "melbourne",
 ] as const;
 export type SceneId = (typeof sceneIds)[number];
-export const sceneCatalog: Record<
-  SceneId,
-  { label: string; landmark: string; tint: string; match?: RegExp }
-> = {
+export interface SceneEntry {
+  label: string;
+  landmark: string;
+  tint: string;
+  match?: RegExp;
+  /** Present for cities added at runtime rather than drawn in the code. */
+  custom?: true;
+}
+export const sceneCatalog: Record<string, SceneEntry> = {
   neutral: {
     label: "Overview",
     landmark: "Earth with shaded continents",
@@ -470,21 +476,70 @@ export const sceneCatalog: Record<
     match: /\bmelbourne\b/i,
   },
 };
-export function scenesForLocation(location: string): SceneId[] {
-  return sceneIds.filter((id) => sceneCatalog[id].match?.test(location));
+/** A city a user or agent adds when the catalog lacks it. Aliases are plain
+    words matched whole and case-insensitively; coordinates place the marker.
+    It draws with the generic scene until someone illustrates it. */
+export const customCitySchema = z.object({
+  id: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]{1,40}$/)
+    .refine((v) => !(sceneIds as readonly string[]).includes(v), "Built-in id"),
+  label: z.string().min(1).max(60),
+  aliases: z.array(z.string().min(2).max(60)).min(1).max(20),
+  lon: z.number().min(-180).max(180),
+  lat: z.number().min(-90).max(90),
+  tint: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .default("#3a4656"),
+  landmark: z.string().max(120).default(""),
+  addedBy: z.enum(["user", "agent"]).default("agent"),
+  addedAt: z.iso.datetime(),
+});
+export type CustomCity = z.infer<typeof customCitySchema>;
+const registered = new Map<string, CustomCity>();
+const escape = (v: string) => v.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Replace the runtime cities with this list; the server does it on every
+    snapshot and the client on every snapshot it receives, before rendering. */
+export function registerCities(cities: CustomCity[]) {
+  for (const id of registered.keys()) {
+    delete sceneCatalog[id];
+    delete cityCoordinates[id];
+  }
+  registered.clear();
+  for (const city of cities) {
+    registered.set(city.id, city);
+    sceneCatalog[city.id] = {
+      label: city.label,
+      landmark: city.landmark || `${city.label} skyline`,
+      tint: city.tint,
+      match: new RegExp(`\\b(${city.aliases.map(escape).join("|")})\\b`, "i"),
+      custom: true,
+    };
+    cityCoordinates[city.id] = [city.lon, city.lat];
+  }
+}
+export function allSceneIds(): string[] {
+  return [...sceneIds, ...registered.keys()];
+}
+export function isScene(id: string) {
+  return (sceneIds as readonly string[]).includes(id) || registered.has(id);
+}
+export function scenesForLocation(location: string): string[] {
+  return allSceneIds().filter((id) => sceneCatalog[id].match?.test(location));
 }
 export function applicationScene(a: {
   location: string;
-  theme: SceneId;
-}): SceneId {
+  theme: string;
+}): string {
   const matches = scenesForLocation(a.location);
   // A remote role can mention an office; Remote stays the primary scene.
   return matches[0] ?? a.theme;
 }
 export function availableScenes(
-  applications: { location: string; theme: SceneId }[],
-): SceneId[] {
-  const present = new Set<SceneId>();
+  applications: { location: string; theme: string }[],
+): string[] {
+  const present = new Set<string>();
   for (const a of applications) {
     const matches = scenesForLocation(a.location);
     for (const id of matches.length ? matches : [a.theme])
@@ -500,7 +555,7 @@ export function availableScenes(
 }
 
 /** Longitude, latitude for the illustrative globe camera; never geolocates the user. */
-export const cityCoordinates: Partial<Record<SceneId, [number, number]>> = {
+export const cityCoordinates: Record<string, [number, number] | undefined> = {
   nyc: [-74.006, 40.713],
   la: [-118.244, 34.052],
   "san-diego": [-117.161, 32.716],
@@ -568,9 +623,9 @@ export const cityCoordinates: Partial<Record<SceneId, [number, number]>> = {
 };
 
 export function geographicGroups<
-  T extends { id: string; location: string; theme: SceneId },
+  T extends { id: string; location: string; theme: string },
 >(apps: T[]) {
-  const groups = new Map<SceneId, string[]>();
+  const groups = new Map<string, string[]>();
   for (const a of apps) {
     const matches = scenesForLocation(a.location);
     const places = matches.includes("remote")

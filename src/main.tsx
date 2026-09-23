@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   statusLabels,
-  themeLabels,
+  themeLabel,
   type Application,
   type Theme,
 } from "../shared/model";
@@ -729,7 +729,7 @@ function App() {
       )}
       <div className="sr-only" aria-live="polite">
         {selected ? `Selected ${selected.company}.` : ""}
-        {applications.length} applications. Scene: {themeLabels[v.theme]}.
+        {applications.length} applications. Scene: {themeLabel(v.theme)}.
       </div>
     </div>
   );

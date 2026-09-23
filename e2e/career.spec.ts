@@ -695,3 +695,70 @@ test("a recorded employer limit shows on the company and its queued roles", asyn
   await acme.getByRole("button", { name: "Remove limit" }).click();
   await expect(acme.locator(".company-cap")).toHaveCount(0);
 });
+test("an added city gets a scene and a globe marker without a code change", async ({
+  page,
+}) => {
+  await command(page, "city", {
+    city: {
+      id: "boise",
+      label: "Boise",
+      aliases: ["Boise", "Meridian, ID"],
+      lon: -116.202,
+      lat: 43.615,
+      addedBy: "user",
+      addedAt: new Date().toISOString(),
+    },
+  });
+  await command(page, "opportunities", {
+    opportunities: [
+      {
+        id: "boise-role",
+        company: "Acme Robotics",
+        companyKey: "acmerobotics",
+        title: "Forward Deployed Engineer",
+        jobKey: "acme|boise-role",
+        url: "https://jobs.example.com/acme/boise-role",
+        description: "Discovered by the board poll.",
+        location: "Boise, ID",
+        compensation: { currency: "USD", annualBase: 160000, annualCash: null },
+      },
+    ],
+  });
+  await command(page, "triage", {
+    opportunityId: "boise-role",
+    triage: {
+      tier: "standard",
+      score: 60,
+      reason: "Fits the grant.",
+      decidedAt: new Date().toISOString(),
+    },
+  });
+  const globe = page.getByRole("slider", { name: "Rotate globe" });
+  await globe.focus();
+  for (let i = 0; i < 4; i++) await globe.press("ArrowLeft");
+  const boise = page.locator('.globe-city[aria-label^="Boise"]');
+  await expect(boise).toHaveAttribute("data-queued", "1");
+  await expect(boise).toHaveAttribute("data-queue-only", "true");
+  await page.evaluate(async () => {
+    const s = await (await fetch("/api/snapshot")).json();
+    await fetch("/api/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        expectedRevision: s.view.revision,
+        action: "theme",
+        payload: { theme: "boise" },
+      }),
+    });
+  });
+  await expect(page.locator(".scene")).toHaveAttribute("data-scene", "boise");
+  await expect(page.locator(".scene")).toHaveAttribute(
+    "data-landmark",
+    "Boise skyline",
+  );
+  // Removing the city while the view still shows it must not break the app.
+  await command(page, "city", { id: "boise", remove: true });
+  await expect(page.locator(".app")).toHaveAttribute("data-theme", "neutral");
+  await expect(page.locator(".earth-globe")).toBeVisible();
+});

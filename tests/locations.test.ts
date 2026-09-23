@@ -3,6 +3,9 @@ import {
   applicationScene,
   availableScenes,
   cityCoordinates,
+  customCitySchema,
+  geographicGroups,
+  registerCities,
   scenesForLocation,
   sceneCatalog,
   sceneIds,
@@ -77,4 +80,45 @@ it("every catalog city has coordinates and an alias pattern that does not claim 
   expect(scenesForLocation("Portland, ME")).toEqual([]);
   expect(scenesForLocation("Dublin, CA")).toEqual([]);
   expect(scenesForLocation("Vancouver, WA")).toEqual([]);
+});
+
+it("registers a runtime city that matches its aliases, has coordinates and validates as a theme", () => {
+  registerCities([
+    {
+      id: "boise",
+      label: "Boise",
+      aliases: ["Boise", "Meridian, ID"],
+      lon: -116.202,
+      lat: 43.615,
+      tint: "#3a4656",
+      landmark: "",
+      addedBy: "agent",
+      addedAt: "2026-09-23T00:00:00.000Z",
+    },
+  ]);
+  try {
+    expect(scenesForLocation("Boise, Idaho")).toEqual(["boise"]);
+    expect(scenesForLocation("Meridian, ID (hybrid)")).toEqual(["boise"]);
+    expect(scenesForLocation("Boisean Street, NYC")).toEqual(["nyc"]);
+    expect(cityCoordinates.boise).toEqual([-116.202, 43.615]);
+    expect(themeSchema.parse("boise")).toBe("boise");
+    expect(sceneCatalog.boise.custom).toBe(true);
+    expect(
+      geographicGroups([{ id: "a", location: "Boise, ID", theme: "neutral" }]),
+    ).toMatchObject([{ id: "boise", label: "Boise", ids: ["a"] }]);
+  } finally {
+    registerCities([]);
+  }
+  expect(() => themeSchema.parse("boise")).toThrow();
+  expect(scenesForLocation("Boise, Idaho")).toEqual([]);
+  expect(() =>
+    customCitySchema.parse({
+      id: "nyc",
+      label: "x",
+      aliases: ["x"],
+      lon: 0,
+      lat: 0,
+      addedAt: "2026-09-23T00:00:00.000Z",
+    }),
+  ).toThrow(/Built-in/);
 });

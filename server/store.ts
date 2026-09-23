@@ -6,7 +6,7 @@ import {
   migrateTriage,
   NORMALIZE_TRIAGE,
 } from "./career";
-import { applicationScene } from "../shared/locations";
+import { applicationScene, isScene } from "../shared/locations";
 import { DatabaseSync } from "node:sqlite";
 import {
   mkdirSync,
@@ -122,7 +122,7 @@ export class Store {
     this.db.close();
   }
   getView(): View {
-    return {
+    const view: View = {
       ...initialView,
       ...JSON.parse(
         (
@@ -132,6 +132,10 @@ export class Store {
         ).body,
       ),
     };
+    // A runtime city can be removed while the view still shows it.
+    if (!isScene(view.theme)) view.theme = "neutral";
+    if (view.city && !isScene(view.city)) view.city = null;
+    return view;
   }
   meta(key: string, fallback: string) {
     return (

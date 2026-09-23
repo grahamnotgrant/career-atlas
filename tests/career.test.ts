@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store, hash } from "../server/store";
 import { opportunitySchema } from "../shared/career";
+import { themeSchema } from "../shared/model";
 import { demoManifest } from "../shared/demo";
 const stores: Store[] = [];
 afterEach(() => {
@@ -879,4 +880,33 @@ it("an employer's application limit blocks claims until the window reopens", () 
   run("company-policy", { companyKey: "acme", remove: true });
   expect(s.career.snapshot().companyPolicies).toEqual([]);
   run("claim", { opportunityId: "o1", owner: "agent-a", grantId: "g1" });
+});
+it("stores a custom city, registers it for themes and locations, and removes it", () => {
+  const { s, run } = setup();
+  const city = {
+    id: "boise",
+    label: "Boise",
+    aliases: ["Boise"],
+    lon: -116.202,
+    lat: 43.615,
+    addedAt: new Date().toISOString(),
+  };
+  expect(run("city", { city }).result).toEqual({ cities: 1 });
+  expect(s.career.snapshot().cities[0]).toMatchObject({
+    id: "boise",
+    tint: "#3a4656",
+    addedBy: "agent",
+  });
+  expect(themeSchema.parse("boise")).toBe("boise");
+  const reopened = new Store(s.dir);
+  try {
+    expect(reopened.career.snapshot().cities).toHaveLength(1);
+  } finally {
+    reopened.close();
+  }
+  run("city", { id: "boise", remove: true });
+  expect(s.career.snapshot().cities).toEqual([]);
+  expect(() => run("city", { id: "boise", remove: true })).toThrow(
+    /No custom city/,
+  );
 });

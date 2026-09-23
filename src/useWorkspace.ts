@@ -1,3 +1,4 @@
+import { registerCities } from "../shared/locations";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrivalQueue } from "./arrivalQueue";
 import type { Command, Snapshot } from "../shared/model";
@@ -126,6 +127,7 @@ export function useWorkspace() {
     }
     arrivalQueue.current.observe(next.applications);
     current.current = next;
+    registerCities(next.career?.cities ?? []);
     setSnapshot(next);
   }
   useEffect(() => {
@@ -148,6 +150,7 @@ export function useWorkspace() {
         if (!current.current) return;
         const next = { ...current.current, sync };
         current.current = next;
+        registerCities(next.career?.cities ?? []);
         setSnapshot(next);
       },
       connected: setConnected,

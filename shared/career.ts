@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { customCitySchema, type CustomCity } from "./locations";
 /** Stable grouping key; punctuation and spacing do not split one employer. */
 export function companyIdentity(company: string) {
   return (
@@ -221,6 +222,7 @@ export function companyStanding(
   };
 }
 export type CompanyStanding = ReturnType<typeof companyStanding>;
+export { customCitySchema };
 /** The queue: sorted roles nobody has applied to yet, including ones the user holds. */
 export function isQueued(o: Opportunity) {
   return (
@@ -246,6 +248,7 @@ export interface CareerState {
   templates: ResumeTemplate[];
   grants: Grant[];
   companyPolicies: CompanyPolicy[];
+  cities: CustomCity[];
   claims: {
     opportunityId: string;
     owner: string;
@@ -278,6 +281,7 @@ export const careerCommandSchema = z.object({
     "decide",
     "vet",
     "company-policy",
+    "city",
   ]),
   payload: z.record(z.string(), z.unknown()),
 });

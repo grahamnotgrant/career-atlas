@@ -13,6 +13,7 @@ import {
   grantSchema,
   companyPolicySchema,
   companyStanding,
+  customCitySchema,
   type CareerState,
   type Opportunity,
   type Grant,
@@ -22,6 +23,7 @@ import {
   manifestSchema,
   type Application,
 } from "../shared/model";
+import { registerCities } from "../shared/locations";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -84,10 +86,18 @@ export class CareerStore {
     const row = this.db
       .prepare("SELECT revision,body FROM career_state WHERE id=1")
       .get() as { revision: number; body: string };
+    // Older states predate policies and cities; the defaults below fill them.
+    const body = JSON.parse(row.body) as Pick<
+      CareerState,
+      "settings" | "families" | "templates" | "grants"
+    > &
+      Partial<Pick<CareerState, "companyPolicies" | "cities">>;
+    registerCities(body.cities ?? []);
     return {
       revision: row.revision,
       companyPolicies: [],
-      ...JSON.parse(row.body),
+      cities: [],
+      ...body,
       opportunities: (
         this.db.prepare("SELECT body FROM opportunities ORDER BY id").all() as {
           body: string;
@@ -97,7 +107,7 @@ export class CareerStore {
         .prepare(
           "SELECT opportunity_id AS opportunityId, owner, fence, expires_at AS expiresAt, grant_id AS grantId FROM application_claims",
         )
-        .all(),
+        .all() as CareerState["claims"],
     };
   }
   private get(id: string): Opportunity {
@@ -690,6 +700,28 @@ export class CareerStore {
           result = companyStanding(policy, state.opportunities, now);
           break;
         }
+        case "city": {
+          const a = z
+            .union([
+              z.object({ city: customCitySchema }).strict(),
+              z.object({ id: key, remove: z.literal(true) }).strict(),
+            ])
+            .parse(p);
+          if ("remove" in a) {
+            const n = state.cities.length;
+            state.cities = state.cities.filter((c) => c.id !== a.id);
+            if (state.cities.length === n)
+              throw new Conflict("No custom city with that id.");
+          } else {
+            state.cities = [
+              ...state.cities.filter((c) => c.id !== a.city.id),
+              a.city,
+            ].sort((x, y) => x.label.localeCompare(y.label));
+          }
+          registerCities(state.cities);
+          result = { cities: state.cities.length };
+          break;
+        }
         case "vet": {
           const { opportunityId, vetting } = z
             .object({ opportunityId: key, vetting: vettingSchema })
@@ -856,6 +888,7 @@ export class CareerStore {
         templates: state.templates,
         grants: state.grants,
         companyPolicies: state.companyPolicies,
+        cities: state.cities,
       };
       this.db
         .prepare(
@@ -895,6 +928,7 @@ export function migrateCareer(db: DatabaseSync) {
       templates: [],
       grants: [],
       companyPolicies: [],
+      cities: [],
     }),
   );
 }

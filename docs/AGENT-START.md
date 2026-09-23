@@ -60,13 +60,14 @@ Follow `skills/scout-roles/SKILL.md` after Common startup. `npm run scout -- pol
 
 Treat the user's explicit correction as direction to act within its scope. Do not ask them to approve the same change again. Classify it before writing:
 
-| Change                                             | Handling                                                                                                                                                                      |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pay, locations, role types, exclusions             | Read current settings, preserve untouched fields and write the requested change with provenance. Re-screen affected queued roles before submission.                           |
-| Resume claims or positioning                       | Create a new immutable template version; preserve old submitted files. Obtain approval when the wording/version has not already been approved.                                |
-| Application stage, date, outcome or identity       | Find supporting evidence or retain the correction as a user report. Preserve conflicting sources and unknowns; do not turn a scheduled interview into a completed one.        |
-| Stop, pause or narrow application scope            | Apply the relevant grant change before further submissions. Recheck active claims and prepared roles. Broader preferences do not broaden an existing authorization grant.     |
-| Globe, satellite, animations or other app behavior | Record the requested behavior and acceptance checks, then follow repository implementation/testing instructions. Product changes must not silently alter application history. |
+| Change                                             | Handling                                                                                                                                                                                |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pay, locations, role types, exclusions             | Read current settings, preserve untouched fields and write the requested change with provenance. Re-screen affected queued roles before submission.                                     |
+| Resume claims or positioning                       | Create a new immutable template version; preserve old submitted files. Obtain approval when the wording/version has not already been approved.                                          |
+| Application stage, date, outcome or identity       | Find supporting evidence or retain the correction as a user report. Preserve conflicting sources and unknowns; do not turn a scheduled interview into a completed one.                  |
+| Stop, pause or narrow application scope            | Apply the relevant grant change before further submissions. Recheck active claims and prepared roles. Broader preferences do not broaden an existing authorization grant.               |
+| A city missing from the globe or scenes            | Add it with the `city` action in `CAREER-CONTROL.md` (id, label, aliases, sourced coordinates). No code change; the generic scene draws it. Illustrated landmarks are a product change. |
+| Globe, satellite, animations or other app behavior | Record the requested behavior and acceptance checks, then follow repository implementation/testing instructions. Product changes must not silently alter application history.           |
 
 Save a private `request-changes` session using `skills/SESSION.md`: the user's request, affected record IDs or files, previous/current revisions, work completed, validation and unresolved questions. If the request is ambiguous, ask one specific question before dependent edits. Keep other agents' unrelated work intact.
 

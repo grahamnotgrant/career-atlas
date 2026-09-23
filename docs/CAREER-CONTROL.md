@@ -55,9 +55,20 @@ All requests require the local bearer token or the browser's same-origin session
 | `triage`           | `{opportunityId, triage: {tier, score?, reason, decidedAt}}`                                                  | Sort a discovered role: `top` marks a strong fit or high pay so the user sees it, `standard` is ordinary, `skip` is set aside. Non-skip roles are approved under the grant unless the user holds them; an agent's re-sort never clears a user decision.                                                                                       |
 | `vet`              | `{opportunityId, vetting: {verdict: pass\|fail, checks, note?, by, at}}`                                      | Record that someone read the full posting and checked pay, location, eligibility and duplicates. `begin-submit` refuses a role without a passing vetting.                                                                                                                                                                                     |
 | `company-policy`   | `{policy: {company, maxApplications, windowDays, source, note?, recordedAt}}` or `{companyKey, remove: true}` | Record an employer's stated application limit, for example three per rolling 90 days. `claim`, `renew` and `begin-submit` refuse a role at that company while confirmed, attempted or uncertain submissions inside the window reach the limit; the error names the next eligible date, or asks for reconciliation when an attempt is undated. |
+| `city`             | `{city: {id, label, aliases, lon, lat, tint?, landmark?, addedBy?, addedAt}}` or `{id, remove: true}`         | Add a city the scene catalog lacks. Aliases are whole words matched case-insensitively in locations; coordinates place the globe marker; the scene draws with the generic skyline. Built-in ids are refused.                                                                                                                                  |
 | `decide`           | `{opportunityId, decision: approved\|hold\|skipped, note?}`                                                   | The user's own call from the Queue: `hold` stops agents on that role until released, `skipped` sets it aside, `approved` releases a hold. Appends user provenance.                                                                                                                                                                            |
 
 A lease lasts 30–900 seconds (300 default). Renew before expiry during preparation. If it expires, stop external actions and re-read the role. A new claim increments the fence, invalidating older agents. `begin-submit` reserves an attempt against the grant cap; an uncertain attempt cannot be claimed again without reconciliation. A expired claim after an external submission does not justify retrying the employer form: preserve the receipt and reconcile through `confirm`.
+
+## Cities the catalog lacks
+
+The scene catalog covers 64 cities. When a user's home or a target location is elsewhere, add it once and every location that names it groups there:
+
+```sh
+npm run career -- city '{"city":{"id":"boise","label":"Boise","aliases":["Boise","Meridian, ID"],"lon":-116.202,"lat":43.615,"addedBy":"user","addedAt":"2026-09-23T00:00:00.000Z"}}'
+```
+
+Look up longitude and latitude from a reliable source and record where they came from in the session; do not guess. Keep aliases specific enough not to claim another place (a bare "Portland" would). The city persists in the private career state and appears in every later snapshot.
 
 ## Employer application limits
 
