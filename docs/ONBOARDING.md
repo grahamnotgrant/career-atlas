@@ -2,7 +2,7 @@
 
 ## Install
 
-Use Node.js 24 or later and Git. Clone the repository into a software folder, then run:
+On macOS or Linux, `scripts/install.sh` (the one-line command in `README.md`) installs Node.js 24 when needed, clones, sets up, starts the app and installs assistant shortcuts. Otherwise use Node.js 24 or later and Git, clone the repository into a software folder, then run:
 
 ```sh
 npm ci

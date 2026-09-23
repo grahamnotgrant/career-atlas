@@ -1,14 +1,26 @@
 # Career Atlas
 
-Track applications, supporting documents and employer outcomes on your computer. Explore applications by city, role family or company. Codex, Claude or another local assistant can read the records and operate the view through the local API.
+Track applications, supporting documents and employer outcomes on your computer. Explore applications by city, role family or company. Any local AI assistant (Codex, Claude Code, or another agent that can run commands) reads the records and operates the view through the local API. Career Atlas is meant to be used with an assistant: it has no forms for onboarding, and the workflows in `skills/` are written for the agent to follow with you.
 
 ## Install
 
-Requires Node.js 24 or later, npm and Git. macOS with Node 26 is tested; Windows and Linux runtime testing remains outstanding.
+Give this link to your assistant and ask it to install Career Atlas, or run one line yourself on macOS or Linux:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/grahamnotgrant/career-atlas/main/scripts/install.sh | sh
+```
+
+The script downloads the official Node.js 24 build into a private folder (checksum verified, no package manager) when no suitable Node exists, clones into `~/career-atlas`, initializes private storage, builds and starts the app at `http://127.0.0.1:4317`, and installs assistant shortcuts for any agent it detects. Rerunning it updates the checkout. Windows: install Node.js 24 and Git, then use the manual steps below.
+
+**If you are an AI assistant reading this:** run the install script above (or the manual steps), then open the checkout and follow `AGENTS.md`, starting with `docs/AGENT-START.md`. Do not ask the person for their resume or history until `docs/PRIVACY.md` has been explained. Never create a second data directory to resume an existing search.
+
+Manual steps need Node.js 24 or later, npm and Git. macOS with Node 24–26 is tested; Windows and Linux runtime testing remains outstanding.
+
+```sh
+git clone https://github.com/grahamnotgrant/career-atlas.git
+cd career-atlas
 npm ci
-npm run atlas -- setup
+npm run atlas -- setup --commands=auto
 npm run atlas -- start
 ```
 

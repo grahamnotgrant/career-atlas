@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { opportunitySchema } from "../shared/career";
 import {
   boardFromUrl,
+  boardListSchema,
   defaultTitlePatterns,
   filterPostings,
   locationMatches,
@@ -172,6 +174,16 @@ it("filters by title family, accepted locations, checkpoint and known URLs", () 
   expect(locationMatches("Remote - APAC", ["Remote"])).toBe(false);
   expect(locationMatches("Japan - Remote", ["Remote"])).toBe(false);
   expect(locationMatches("Remote, US or London", ["Remote"])).toBe(true);
+});
+
+it("ships a valid starter board list for fresh installations", () => {
+  const starter = boardListSchema.parse(
+    JSON.parse(readFileSync("skills/scout-roles/starter-boards.json", "utf8")),
+  );
+  expect(starter.boards.length).toBeGreaterThan(10);
+  expect(new Set(starter.boards.map((b) => `${b.ats}:${b.slug}`)).size).toBe(
+    starter.boards.length,
+  );
 });
 
 it("builds an opportunity the career schema accepts", () => {

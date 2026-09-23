@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "boards": [
+    {
+      "ats": "ashby",
+      "slug": "openai",
+      "company": "OpenAI",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "greenhouse",
+      "slug": "anthropic",
+      "company": "Anthropic",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "writer",
+      "company": "Writer",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "harvey",
+      "company": "Harvey",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "runway-ml",
+      "company": "Runway",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "Perplexity",
+      "company": "Perplexity",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "ramp",
+      "company": "Ramp",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "notion",
+      "company": "Notion",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "elevenlabs",
+      "company": "ElevenLabs",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "sierra",
+      "company": "Sierra",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "greenhouse",
+      "slug": "scaleai",
+      "company": "Scale AI",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "greenhouse",
+      "slug": "hightouch",
+      "company": "Hightouch",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "greenhouse",
+      "slug": "webflow",
+      "company": "Webflow",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "greenhouse",
+      "slug": "cresta",
+      "company": "Cresta",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "greenhouse",
+      "slug": "braze",
+      "company": "Braze",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "greenhouse",
+      "slug": "checkr",
+      "company": "Checkr",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "clickup",
+      "company": "ClickUp",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "instructure",
+      "company": "Instructure",
+      "addedAt": null,
+      "source": "starter list"
+    },
+    {
+      "ats": "ashby",
+      "slug": "traba",
+      "company": "Traba",
+      "addedAt": null,
+      "source": "starter list"
+    }
+  ]
+}

@@ -5,7 +5,8 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { dataDirectory } from "../server/paths";
 import {
@@ -108,8 +109,20 @@ if (action === "seed") {
         addedAt: new Date().toISOString(),
       });
   }
+  // A fresh installation has no stored URLs yet; the bundled starter list gives the first poll something to read.
+  const starter = boardListSchema.parse(
+    JSON.parse(
+      readFileSync(
+        join(
+          dirname(fileURLToPath(import.meta.url)),
+          "../skills/scout-roles/starter-boards.json",
+        ),
+        "utf8",
+      ),
+    ),
+  ).boards;
   const before = readBoards();
-  const after = saveBoards([...before, ...found]);
+  const after = saveBoards([...before, ...found, ...starter]);
   console.log(
     JSON.stringify({
       before: before.length,
