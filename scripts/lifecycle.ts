@@ -122,17 +122,28 @@ ${agents.length ? "Start in your agent: " + agents.map((a) => (a === "codex" ? "
     );
     closeSync(fd);
     child.unref();
-    for (let n = 0; n < 50; n++) {
-      await new Promise((r) => setTimeout(r, 100));
+    // Compiling the server and opening a large database can take well over
+    // five seconds; wait up to a minute, but stop at once if the process dies.
+    let exited: number | null = null;
+    child.on("exit", (code) => {
+      exited = code ?? 1;
+    });
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 250));
+      if (exited !== null)
+        throw new Error(
+          `Server exited with code ${exited} during startup. Inspect ${join(dir, "logs", "server.log")}.`,
+        );
       try {
-        if ((await request("/api/snapshot")).ok) {
+        if ((await request("/api/health")).ok) {
           console.log(`Running: ${url}`);
           process.exit(0);
         }
       } catch {}
     }
     throw new Error(
-      `Startup did not become healthy. Inspect ${join(dir, "logs", "server.log")}.`,
+      `Startup did not become healthy within 60 seconds. Inspect ${join(dir, "logs", "server.log")}.`,
     );
   } else if (action === "stop") {
     const response = await request("/api/shutdown", "POST");
@@ -140,10 +151,10 @@ ${agents.length ? "Start in your agent: " + agents.map((a) => (a === "codex" ? "
       throw new Error(
         `Stop refused (${response.status}); no process was killed.`,
       );
-    for (let n = 0; n < 30; n++) {
-      await new Promise((r) => setTimeout(r, 100));
+    for (let n = 0; n < 60; n++) {
+      await new Promise((r) => setTimeout(r, 250));
       try {
-        await request("/api/snapshot");
+        await request("/api/health");
       } catch {
         console.log("Stopped. Personal data preserved.");
         process.exit(0);
