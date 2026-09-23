@@ -26,7 +26,7 @@ it("installs both formats, stays idempotent, and uninstalls only its own directo
   const root = project();
   mkdirSync(join(root, ".claude"));
   writeFileSync(join(root, ".claude/settings.json"), "{}");
-  expect(manageCommands(root, "install", ["codex", "claude"])).toHaveLength(10);
+  expect(manageCommands(root, "install", ["codex", "claude"])).toHaveLength(12);
   expect(
     manageCommands(root, "install", ["codex", "claude"]).every(
       (p) => p.state === "current",

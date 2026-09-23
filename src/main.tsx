@@ -47,7 +47,7 @@ function App() {
     pauseArrivals,
   } = useWorkspace();
   const [careerTab, setCareerTab] = useState<
-    "roles" | "records" | "analysis" | null
+    "queue" | "roles" | "records" | "analysis" | null
   >(null);
   /* The digest compares dated events against the day of the previous visit,
      kept per workspace in this browser only. The day moves forward when the
@@ -296,6 +296,12 @@ function App() {
         )
     : [];
   digestPending.current = digestParts.length > 0;
+  const liveClaims = snapshot.career.claims.filter(
+    (c) => Date.parse(c.expiresAt) > Date.now(),
+  );
+  const uncertain = snapshot.career.opportunities.filter(
+    (o) => o.lifecycle === "uncertain",
+  ).length;
   const digestIds = digest
     ? [
         ...new Set(
@@ -426,6 +432,7 @@ function App() {
               moving={moving}
               home={snapshot.homeLocation}
               applications={applications}
+              opportunities={snapshot.career.opportunities}
               {...selection}
               onCity={goCity}
             />
@@ -488,6 +495,17 @@ function App() {
           )}
           <div className="scene-status">
             <Cadence applications={applications} />
+            {(liveClaims.length > 0 || uncertain > 0) && (
+              <button
+                className="quiet-button agent-activity"
+                onClick={() => setCareerTab("queue")}
+              >
+                {liveClaims.length > 0 &&
+                  `${new Set(liveClaims.map((c) => c.owner)).size} ${new Set(liveClaims.map((c) => c.owner)).size === 1 ? "agent" : "agents"} · ${liveClaims.length} in flight`}
+                {liveClaims.length > 0 && uncertain > 0 && " · "}
+                {uncertain > 0 && `${uncertain} uncertain`}
+              </button>
+            )}
             {digestParts.length > 0 && (
               <div className="digest" role="status">
                 <button

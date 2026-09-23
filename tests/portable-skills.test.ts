@@ -11,6 +11,7 @@ const skills = [
   "run-search",
   "review-and-improve",
   "maintain-records",
+  "scout-roles",
 ];
 describe("portable onboarding contract", () => {
   it("ships standalone skills with resumable inputs, outputs and approval gates", () => {

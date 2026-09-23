@@ -1,6 +1,6 @@
 # Agent shortcuts
 
-Setup can install five project shortcuts:
+Setup can install six project shortcuts:
 
 ```sh
 npm run atlas -- setup --commands=auto
@@ -17,6 +17,7 @@ Open this repository in your agent and start with **career-start**: `$career-sta
 | career-change | Change preferences, correct records, request app changes    |
 | career-apply  | Continue applications within existing authorization         |
 | career-review | Analyze outcomes and identify improvements                  |
+| career-scout  | Poll employer boards, store and triage new roles            |
 
 The shortcuts read [AGENT-START.md](AGENT-START.md) and existing workflow skills. They add no account access or submission permission. Sync runs when invoked; it does not create a background schedule.
 

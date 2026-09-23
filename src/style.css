@@ -269,13 +269,24 @@ h1 em {
   font-weight: 450;
   letter-spacing: -0.4px;
 }
+/* The bar keeps one height whatever appears in it: buttons never wrap,
+   the hint has a fixed measure, and the row reserves two lines of text. */
 .scene-bottom {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: 18px 40px;
   align-items: center;
-  gap: 24px;
+  gap: 4px 24px;
   padding: 0 10px;
   margin-top: auto;
+}
+.scene-bottom > .motion-control {
+  grid-row: 2;
+  grid-column: 1;
+}
+.scene-bottom .quiet-button,
+.scene-bottom .sync-status {
+  white-space: nowrap;
 }
 .motion-control {
   display: flex;
@@ -313,7 +324,7 @@ h1 em {
   color: #e3ebfb;
 }
 .motion-control > div > span {
-  font-size: 10px;
+  font-size: 11px;
   color: #a8bcdb;
 }
 .sync-status {
@@ -333,18 +344,29 @@ h1 em {
   flex-shrink: 0;
 }
 .scene-status {
+  grid-row: 2;
   grid-column: 3;
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-}
-.globe-hint {
-  grid-column: 2;
-  display: flex;
   align-items: center;
-  gap: 14px;
+  flex-wrap: nowrap;
+  gap: 10px;
+  min-width: 0;
+}
+/* The hint keeps a reserved line of its own above the status row, so
+   its presence, absence or length never moves the row below it. */
+.globe-hint {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  justify-self: center;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: #9fb4cf;
   font-size: 12px;
+  line-height: 18px;
+  text-align: center;
 }
 .globe-hint button {
   min-height: 32px;
@@ -970,13 +992,20 @@ h1 em {
   }
   .scene-bottom {
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
     padding: 12px 0 0;
     gap: 15px;
   }
+  .scene-bottom > .motion-control,
   .globe-hint,
   .scene-status {
+    grid-row: auto;
     grid-column: 1;
     flex-wrap: wrap;
+  }
+  .globe-hint {
+    white-space: normal;
+    line-height: 1.4;
   }
   .globe-hint button {
     min-height: 44px;
@@ -1752,7 +1781,7 @@ h1 em {
   margin: 0;
 }
 .cadence figcaption {
-  font-size: 10px;
+  font-size: 11px;
   color: #93a3ba;
   white-space: nowrap;
 }
@@ -1863,4 +1892,164 @@ h1 em {
 .record-triage {
   font-size: 13px;
   color: #cbd7ea;
+}
+.in-flight {
+  margin: 12px 0 18px;
+  padding: 12px;
+  border: 1px solid #2f4462;
+  border-radius: 12px;
+  background: #0b1526;
+}
+.in-flight h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #9fb4cf;
+}
+.flight-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid #1b2b42;
+}
+.flight-row[data-live="false"] .queue-open {
+  opacity: 0.7;
+}
+.flight-steps {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.flight-steps li {
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid #2b4058;
+  font-size: 10px;
+  color: #8fa3bd;
+}
+.flight-steps li[data-state="done"] {
+  border-color: #8ff2c7;
+  color: #a9f2dc;
+}
+.flight-steps li[data-state="current"] {
+  border-color: #7caeff;
+  color: #d8ebff;
+  background: #16213a;
+}
+.vetted {
+  margin-right: 6px;
+  font-weight: 500;
+  color: #a9f2dc;
+}
+.vetted[data-verdict="fail"],
+.record-triage b[data-verdict="fail"] {
+  color: #ffb3b9;
+}
+.agent-activity {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #d8ebff;
+}
+.tier-top {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #8ff2c7;
+  color: #06251a;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.queue-tier[data-tier="hold"] .queue-row {
+  border-color: #ffd48c;
+}
+/* Cleared roles ring their city until a confirmed submission releases them. */
+.queue-ring {
+  animation: queue-ring-march 6s linear infinite;
+}
+@keyframes queue-ring-march {
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+.globe-city[data-queue-only] > circle:not(.queue-ring) {
+  fill: #ffd27a;
+}
+[data-queue-count] {
+  fill: #ffd27a;
+  font-size: 13px;
+  font-weight: 600;
+}
+.queue-clear-ring,
+.queue-clear-spark {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.queue-clear-ring {
+  animation: queue-clear-ring 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.queue-clear-spark {
+  animation: queue-clear-spark 1.6s ease-in forwards;
+}
+@keyframes queue-clear-ring {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+@keyframes queue-clear-spark {
+  0% {
+    transform: scale(2.6);
+    opacity: 1;
+  }
+  55% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+/* Employer application limits shown on queue rows and company history. */
+.company-cap {
+  font-weight: 600;
+  color: #cbd7ea;
+}
+.company-cap[data-at-cap="true"] {
+  color: #ffb3a7;
+}
+.company-policy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+  color: #93a3ba;
+}
+.company-policy label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.company-policy input[type="number"] {
+  width: 4.5em;
+}
+.company-policy input:not([type]) {
+  flex: 1 1 180px;
 }

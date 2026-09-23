@@ -8,8 +8,11 @@ import {
   familySchema,
   opportunitySchema,
   triageSchema,
+  vettingSchema,
   templateSchema,
   grantSchema,
+  companyPolicySchema,
+  companyStanding,
   type CareerState,
   type Opportunity,
   type Grant,
@@ -83,6 +86,7 @@ export class CareerStore {
       .get() as { revision: number; body: string };
     return {
       revision: row.revision,
+      companyPolicies: [],
       ...JSON.parse(row.body),
       opportunities: (
         this.db.prepare("SELECT body FROM opportunities ORDER BY id").all() as {
@@ -200,6 +204,25 @@ export class CareerStore {
           throw new Conflict(
             "Role does not satisfy the authorization boundaries.",
           );
+        const policy = state.companyPolicies.find(
+          (x) => x.companyKey === companyIdentity(o.company),
+        );
+        if (policy) {
+          const standing = companyStanding(
+            policy,
+            state.opportunities,
+            now,
+            o.id,
+          );
+          if (standing.atCap)
+            throw new Conflict(
+              `Company limit reached: ${standing.used} of ${standing.max} applications to ${policy.company} in ${standing.windowDays} days. ${
+                standing.nextEligibleAt
+                  ? `Next eligible ${standing.nextEligibleAt.slice(0, 10)}.`
+                  : "Reconcile undated attempts before applying again."
+              }`,
+            );
+        }
       };
       switch (c.action) {
         case "settings":
@@ -515,6 +538,10 @@ export class CareerStore {
             o = this.get(a.opportunityId),
             grant = state.grants.find((g) => g.id === claim.grantId);
           eligible(o, grant);
+          if (o.vetting?.verdict !== "pass")
+            throw new Conflict(
+              "Vet the role before submitting: read the full posting and record the checks.",
+            );
           if (
             o.lifecycle !== "prepared" ||
             !o.description.trim() ||
@@ -619,21 +646,59 @@ export class CareerStore {
           const o = this.get(opportunityId);
           if (o.lifecycle === "confirmed")
             throw new Conflict("A confirmed application is not triaged.");
-          if (o.triage?.decision === "approved" && triage.tier !== "auto")
-            throw new Conflict(
-              "The user approved this role; only a decide command changes that.",
-            );
-          // An agent sorts; the user decides. `auto` needs no decision.
+          // An agent sorts; a user decision (hold, skip, release) survives it.
+          const userDecided = o.triage?.decidedBy === "user";
           o.triage = {
             ...triage,
-            decidedBy: "agent",
-            decision:
-              triage.tier === "auto"
-                ? "approved"
-                : triage.tier === "skip"
-                  ? "skipped"
-                  : "pending",
+            decidedBy: userDecided ? "user" : "agent",
+            decidedAt: userDecided ? o.triage!.decidedAt : triage.decidedAt,
+            decision: userDecided
+              ? o.triage!.decision
+              : triage.tier === "skip"
+                ? "skipped"
+                : "approved",
           };
+          this.put(o);
+          break;
+        }
+        case "company-policy": {
+          const a = z
+            .union([
+              z.object({ policy: companyPolicySchema }).strict(),
+              z.object({ companyKey: key, remove: z.literal(true) }).strict(),
+            ])
+            .parse(p);
+          if ("remove" in a) {
+            const n = state.companyPolicies.length;
+            state.companyPolicies = state.companyPolicies.filter(
+              (x) => x.companyKey !== a.companyKey,
+            );
+            if (state.companyPolicies.length === n)
+              throw new Conflict("No policy recorded for that company.");
+            break;
+          }
+          const policy = {
+            ...a.policy,
+            companyKey: companyIdentity(a.policy.company),
+          };
+          state.companyPolicies = [
+            ...state.companyPolicies.filter(
+              (x) => x.companyKey !== policy.companyKey,
+            ),
+            policy,
+          ].sort((x, y) => x.company.localeCompare(y.company));
+          result = companyStanding(policy, state.opportunities, now);
+          break;
+        }
+        case "vet": {
+          const { opportunityId, vetting } = z
+            .object({ opportunityId: key, vetting: vettingSchema })
+            .strict()
+            .parse(p);
+          const o = this.get(opportunityId);
+          if (o.lifecycle === "confirmed")
+            throw new Conflict("A confirmed application is not vetted again.");
+          o.vetting = vetting;
           this.put(o);
           break;
         }
@@ -641,7 +706,7 @@ export class CareerStore {
           const { opportunityId, decision, note } = z
             .object({
               opportunityId: key,
-              decision: z.enum(["approved", "skipped"]),
+              decision: z.enum(["approved", "hold", "skipped"]),
               note: z.string().max(4000).default(""),
             })
             .strict()
@@ -657,7 +722,7 @@ export class CareerStore {
           o.provenance.push({
             id: `${o.id}-decision-${now.replace(/\D/g, "").slice(0, 14)}`,
             kind: "user",
-            text: `${decision === "approved" ? "Approved" : "Skipped"} from the queue.${note ? " " + note : ""}`,
+            text: `${decision === "approved" ? "Released" : decision === "hold" ? "Put on hold for review" : "Skipped"} from the queue.${note ? " " + note : ""}`,
             source: "queue",
             recordedAt: now,
           });
@@ -790,6 +855,7 @@ export class CareerStore {
         families: state.families,
         templates: state.templates,
         grants: state.grants,
+        companyPolicies: state.companyPolicies,
       };
       this.db
         .prepare(
@@ -828,6 +894,18 @@ export function migrateCareer(db: DatabaseSync) {
       families: [],
       templates: [],
       grants: [],
+      companyPolicies: [],
     }),
   );
 }
+/** Version 4. Triage once used review/auto with a pending decision; every
+    non-skip role is now approved unless the user holds it, and the strong
+    tier is `top`. */
+export function migrateTriage(db: DatabaseSync) {
+  db.exec(
+    `BEGIN IMMEDIATE; ${NORMALIZE_TRIAGE} PRAGMA user_version=4; COMMIT;`,
+  );
+}
+/** Idempotent; also run on every open, so a process still writing the old
+    shape cannot leave a row the panel and the schema reject. */
+export const NORMALIZE_TRIAGE = `UPDATE opportunities SET body=json_set(body,'$.triage.tier',CASE json_extract(body,'$.triage.tier') WHEN 'review' THEN 'top' WHEN 'auto' THEN 'standard' ELSE json_extract(body,'$.triage.tier') END,'$.triage.decision',CASE json_extract(body,'$.triage.decision') WHEN 'pending' THEN 'approved' ELSE json_extract(body,'$.triage.decision') END) WHERE json_extract(body,'$.triage.tier') IN ('review','auto') OR json_extract(body,'$.triage.decision')='pending';`;

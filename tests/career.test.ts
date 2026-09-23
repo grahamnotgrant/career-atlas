@@ -95,6 +95,15 @@ function prepare(
   const bytes = "Exact resume bytes",
     h = hash(bytes);
   writeFileSync(join(s.dir, "artifacts", h), bytes);
+  run("vet", {
+    opportunityId: "o1",
+    vetting: {
+      verdict: "pass",
+      checks: ["full posting read", "pay clears floor", "no duplicate"],
+      by: "agent",
+      at: new Date().toISOString(),
+    },
+  });
   run("prepare", {
     opportunityId: "o1",
     owner: "agent-a",
@@ -601,7 +610,7 @@ it("rechecks the approved template family after classification changes", () => {
   ).toThrow("approved template");
 });
 
-it("lets an agent sort a discovered role and only the user move a review role forward", () => {
+it("approves sorted roles by default, and only the user's hold or skip stops them", () => {
   const { s, run } = setup();
   const role = opportunitySchema.parse({
     id: "opp-queue",
@@ -615,49 +624,259 @@ it("lets an agent sort a discovered role and only the user move a review role fo
   });
   run("opportunities", { opportunities: [role] });
   const decidedAt = new Date().toISOString();
+  const at = (id: string) =>
+    s.career.snapshot().opportunities.find((x) => x.id === id)!;
   run("triage", {
     opportunityId: role.id,
     triage: {
-      tier: "review",
+      tier: "top",
       score: 91,
-      reason: "Title and pay match the top family.",
+      reason: "Title and pay match.",
       decidedAt,
     },
   });
-  let o = s.career.snapshot().opportunities.find((x) => x.id === role.id)!;
-  expect(o.triage).toMatchObject({
-    tier: "review",
-    decision: "pending",
+  expect(at(role.id).triage).toMatchObject({
+    tier: "top",
+    decision: "approved",
     decidedBy: "agent",
-    score: 91,
   });
-  // An agent cannot smuggle a decision through triage.
   expect(() =>
     run("triage", {
       opportunityId: role.id,
-      triage: { tier: "review", reason: "", decidedAt, decision: "approved" },
+      triage: { tier: "top", reason: "", decidedAt, decision: "hold" },
     }),
   ).toThrow();
-  run("decide", { opportunityId: role.id, decision: "approved", note: "Go." });
-  o = s.career.snapshot().opportunities.find((x) => x.id === role.id)!;
-  expect(o.triage).toMatchObject({ decision: "approved", decidedBy: "user" });
-  expect(o.provenance.at(-1)).toMatchObject({ kind: "user", source: "queue" });
-  // Re-sorting an approved role as review does not undo the user's decision.
-  expect(() =>
-    run("triage", {
-      opportunityId: role.id,
-      triage: { tier: "review", reason: "", decidedAt },
-    }),
-  ).toThrow(/approved/);
+  run("decide", {
+    opportunityId: role.id,
+    decision: "hold",
+    note: "I want to read this one.",
+  });
+  expect(at(role.id).triage).toMatchObject({
+    decision: "hold",
+    decidedBy: "user",
+  });
+  expect(at(role.id).provenance.at(-1)).toMatchObject({
+    kind: "user",
+    source: "queue",
+  });
   run("triage", {
     opportunityId: role.id,
-    triage: { tier: "auto", reason: "", decidedAt },
+    triage: { tier: "standard", reason: "re-sorted", decidedAt },
   });
-  expect(
-    s.career.snapshot().opportunities.find((x) => x.id === role.id)!.triage!
-      .decision,
-  ).toBe("approved");
+  expect(at(role.id).triage).toMatchObject({
+    tier: "standard",
+    decision: "hold",
+    decidedBy: "user",
+  });
+  run("decide", { opportunityId: role.id, decision: "approved" });
+  expect(at(role.id).triage!.decision).toBe("approved");
+  run("triage", {
+    opportunityId: role.id,
+    triage: { tier: "skip", reason: "below floor", decidedAt },
+  });
+  expect(at(role.id).triage!.decision).toBe("approved");
   expect(() =>
     run("decide", { opportunityId: "missing", decision: "skipped" }),
   ).toThrow();
+});
+it("refuses to begin a submission until the role is vetted with a pass", () => {
+  const { s, run } = eligible();
+  run("claim", { opportunityId: "o1", owner: "agent-a", grantId: "g1" });
+  const bytes = "Exact resume bytes",
+    h = hash(bytes);
+  writeFileSync(join(s.dir, "artifacts", h), bytes);
+  run("prepare", {
+    opportunityId: "o1",
+    owner: "agent-a",
+    fence: 1,
+    templateId: "t1",
+    materialHashes: [h],
+    answers: "Answers",
+  });
+  expect(() =>
+    run("begin-submit", { opportunityId: "o1", owner: "agent-a", fence: 1 }),
+  ).toThrow(/Vet the role/);
+  run("vet", {
+    opportunityId: "o1",
+    vetting: {
+      verdict: "fail",
+      checks: ["pay below floor"],
+      note: "Posting lists $120K.",
+      by: "agent",
+      at: new Date().toISOString(),
+    },
+  });
+  expect(() =>
+    run("begin-submit", { opportunityId: "o1", owner: "agent-a", fence: 1 }),
+  ).toThrow(/Vet the role/);
+  run("vet", {
+    opportunityId: "o1",
+    vetting: {
+      verdict: "pass",
+      checks: ["full posting read", "pay clears floor"],
+      by: "user",
+      at: new Date().toISOString(),
+    },
+  });
+  run("begin-submit", { opportunityId: "o1", owner: "agent-a", fence: 1 });
+  expect(s.career.snapshot().opportunities[0].lifecycle).toBe("attempted");
+  expect(() =>
+    run("vet", {
+      opportunityId: "o1",
+      vetting: {
+        verdict: "pass",
+        checks: ["x"],
+        by: "agent",
+        at: new Date().toISOString(),
+      },
+    }),
+  ).not.toThrow();
+});
+
+it("migrates the earlier review/auto triage into top/standard with approved decisions", () => {
+  const { s } = setup();
+  const old = (id: string, tier: string, decision: string) =>
+    JSON.stringify({
+      id,
+      company: "Old Co",
+      companyKey: "oldco",
+      title: id,
+      jobKey: `old|${id}`,
+      url: "",
+      description: "",
+      roleFamilyId: null,
+      location: "",
+      workArrangement: "unknown",
+      compensation: null,
+      lifecycle: "discovered",
+      submittedAt: null,
+      applicationId: null,
+      offer: null,
+      provenance: [],
+      triage: {
+        tier,
+        score: null,
+        reason: "",
+        decidedBy: "agent",
+        decidedAt: new Date().toISOString(),
+        decision,
+      },
+      templateId: null,
+      materialHashes: [],
+      answers: "",
+    });
+  s.db
+    .prepare("INSERT INTO opportunities VALUES (?,?,?)")
+    .run("m1", "old|m1", old("m1", "review", "pending"));
+  s.db
+    .prepare("INSERT INTO opportunities VALUES (?,?,?)")
+    .run("m2", "old|m2", old("m2", "auto", "approved"));
+  s.db
+    .prepare("INSERT INTO opportunities VALUES (?,?,?)")
+    .run("m3", "old|m3", old("m3", "skip", "skipped"));
+  s.db.exec("PRAGMA user_version=3");
+  const reopened = new Store(s.dir);
+  const byId = new Map(
+    reopened.career.snapshot().opportunities.map((o) => [o.id, o.triage]),
+  );
+  reopened.close();
+  expect(byId.get("m1")).toMatchObject({ tier: "top", decision: "approved" });
+  expect(byId.get("m2")).toMatchObject({
+    tier: "standard",
+    decision: "approved",
+  });
+  expect(byId.get("m3")).toMatchObject({ tier: "skip", decision: "skipped" });
+});
+it("an employer's application limit blocks claims until the window reopens", () => {
+  const { s, run } = eligible();
+  const day = 86_400_000,
+    ago = (days: number) =>
+      new Date(Date.now() - days * day).toISOString().slice(0, 10);
+  const history = (entries: [string, string][]) => {
+    const manifest = demoManifest();
+    const template = manifest.applications[0];
+    manifest.label = `acme-${entries.map(([id]) => id).join("-")}`;
+    manifest.applications = entries.map(([id, submitted]) => ({
+      ...template,
+      id: `app-${id}`,
+      company: "ACME",
+      title: `Role ${id}`,
+      submitted,
+      events: template.events.map((e) => ({
+        ...e,
+        id: `${id}-${e.id}`,
+        date: e.kind === "submission" ? submitted : e.date,
+        evidenceIds: e.evidenceIds.map((x) => `${id}-${x}`),
+      })),
+      evidence: template.evidence.map((e) => ({ ...e, id: `${id}-${e.id}` })),
+    }));
+    s.importManifest(manifest, s.dir);
+  };
+  history([
+    ["old", ago(100)],
+    ["recent", ago(10)],
+  ]);
+  const standing = run("company-policy", {
+    policy: {
+      company: "Acme",
+      companyKey: "ignored-and-normalized",
+      maxApplications: 2,
+      windowDays: 90,
+      source: "Careers FAQ: two applications per rolling 90 days",
+      recordedAt: new Date().toISOString(),
+    },
+  }).result;
+  expect(standing).toMatchObject({ used: 1, max: 2, atCap: false });
+  expect(s.career.snapshot().companyPolicies[0].companyKey).toBe("acme");
+  run("claim", { opportunityId: "o1", owner: "agent-a", grantId: "g1" });
+  run("release", { opportunityId: "o1", owner: "agent-a", fence: 1 });
+  history([
+    ["old", ago(100)],
+    ["recent", ago(10)],
+    ["newest", ago(3)],
+  ]);
+  expect(() =>
+    run("claim", { opportunityId: "o1", owner: "agent-a", grantId: "g1" }),
+  ).toThrow(/Company limit reached: 2 of 2.*Next eligible/);
+  // An undated attempt counts, and hides the reopening date until reconciled.
+  run("company-policy", {
+    policy: {
+      company: "Acme",
+      companyKey: "acme",
+      maxApplications: 3,
+      windowDays: 90,
+      source: "Corrected after re-reading the FAQ",
+      recordedAt: new Date().toISOString(),
+    },
+  });
+  run("opportunities", {
+    opportunities: [
+      opportunitySchema.parse({
+        id: "acme-uncertain",
+        jobKey: "acme-uncertain",
+        company: "Acme",
+        companyKey: "acme",
+        title: "Role uncertain",
+        url: "",
+        description: "d",
+        location: "Denver",
+        lifecycle: "uncertain",
+        provenance: [
+          {
+            id: "acme-uncertain-source",
+            kind: "source",
+            text: "Browser closed mid-submit",
+            source: "ledger",
+            recordedAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    ],
+  });
+  expect(() =>
+    run("claim", { opportunityId: "o1", owner: "agent-a", grantId: "g1" }),
+  ).toThrow(/3 of 3.*Reconcile undated attempts/);
+  run("company-policy", { companyKey: "acme", remove: true });
+  expect(s.career.snapshot().companyPolicies).toEqual([]);
+  run("claim", { opportunityId: "o1", owner: "agent-a", grantId: "g1" });
 });

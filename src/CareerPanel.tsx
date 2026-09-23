@@ -1,6 +1,12 @@
 import { useMemo, useState, useRef } from "react";
 import { statusLabels, type Application } from "../shared/model";
-import { type CareerState, type Opportunity } from "../shared/career";
+import {
+  companyStanding,
+  isQueued,
+  type CareerState,
+  type CompanyStanding,
+  type Opportunity,
+} from "../shared/career";
 import { Popup } from "./Popup";
 import { arrangementConversion, formatRate } from "./journey";
 
@@ -56,21 +62,70 @@ export function CareerPanel({
   const queue = useMemo(
     () =>
       career.opportunities
-        .filter(
-          (o) =>
-            o.triage &&
-            o.triage.tier !== "skip" &&
-            o.triage.decision !== "skipped" &&
-            ["discovered", "prepared"].includes(o.lifecycle),
-        )
+        .filter(isQueued)
         .sort(
           (a, b) =>
-            Number(b.triage!.tier === "review") -
-              Number(a.triage!.tier === "review") ||
+            Number(b.triage!.tier === "top") -
+              Number(a.triage!.tier === "top") ||
             (b.triage!.score ?? -1) - (a.triage!.score ?? -1) ||
             a.company.localeCompare(b.company),
         ),
     [career.opportunities],
+  );
+  /* In flight: every unexpired claim, joined to its opportunity, with how far
+     the agent has taken it. Attempts that ended without a confirmation in the
+     last day, and claims that lapsed mid-way, are the ones a person must see. */
+  const now = Date.now();
+  /* Employer application limits: how many submissions sit inside each
+     company's window right now, and when the next one is allowed. */
+  const standings = useMemo(() => {
+    const at = new Date(now).toISOString();
+    return new Map<string, CompanyStanding & { company: string }>(
+      career.companyPolicies.map((p) => [
+        p.companyKey,
+        { ...companyStanding(p, career.opportunities, at), company: p.company },
+      ]),
+    );
+  }, [career.companyPolicies, career.opportunities, now]);
+  const inFlight = useMemo(() => {
+    const byId = new Map(career.opportunities.map((o) => [o.id, o]));
+    return career.claims
+      .map((claim) => ({ claim, o: byId.get(claim.opportunityId) }))
+      .filter(
+        (
+          row,
+        ): row is { claim: (typeof career.claims)[number]; o: Opportunity } =>
+          !!row.o,
+      )
+      .map(({ claim, o }) => ({
+        claim,
+        o,
+        live: Date.parse(claim.expiresAt) > now,
+        step:
+          o.lifecycle === "confirmed"
+            ? 4
+            : o.lifecycle === "attempted"
+              ? 3
+              : o.lifecycle === "prepared"
+                ? 2
+                : o.vetting?.verdict === "pass"
+                  ? 1
+                  : 0,
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.live) - Number(a.live) ||
+          a.claim.expiresAt.localeCompare(b.claim.expiresAt),
+      );
+  }, [career.claims, career.opportunities, now]);
+  const needsPerson = useMemo(
+    () =>
+      career.opportunities.filter(
+        (o) =>
+          (o.lifecycle === "uncertain" || o.lifecycle === "blocked") &&
+          o.provenance.some((p) => now - Date.parse(p.recordedAt) < 86_400_000),
+      ),
+    [career.opportunities, now],
   );
   const records = useMemo(
     () =>
@@ -138,29 +193,32 @@ export function CareerPanel({
         {tab === "queue" && (
           <>
             <h2>Queue</h2>
-            {!queue.length && (
-              <p>
-                No sorted roles waiting. An agent adds roles here with the
-                <code> triage </code>
-                command; strong fits wait for you, the rest apply under your
-                grant.
-              </p>
-            )}
-            {(["review", "auto"] as const).map((tier) => {
-              const rows = queue.filter((o) => o.triage!.tier === tier);
-              if (!rows.length) return null;
-              return (
-                <section className="queue-tier" key={tier} data-tier={tier}>
-                  <h3>
-                    {tier === "review"
-                      ? `Needs your review · ${rows.filter((o) => o.triage!.decision === "pending").length} waiting`
-                      : `Cleared to apply under your grant · ${rows.length}`}
-                  </h3>
-                  {rows.slice(0, 40).map((o) => (
+            {(inFlight.length > 0 || needsPerson.length > 0) && (
+              <section className="in-flight">
+                <h3>
+                  In flight ·{" "}
+                  {
+                    new Set(
+                      inFlight.filter((r) => r.live).map((r) => r.claim.owner),
+                    ).size
+                  }{" "}
+                  {new Set(
+                    inFlight.filter((r) => r.live).map((r) => r.claim.owner),
+                  ).size === 1
+                    ? "agent"
+                    : "agents"}{" "}
+                  · {inFlight.filter((r) => r.live).length} claimed
+                </h3>
+                {inFlight.map(({ claim, o, live, step }) => {
+                  const minutes = Math.max(
+                    0,
+                    Math.round((Date.parse(claim.expiresAt) - now) / 60000),
+                  );
+                  return (
                     <article
-                      className="queue-row"
+                      className="flight-row"
                       key={o.id}
-                      data-decision={o.triage!.decision}
+                      data-live={live ? "true" : "false"}
                     >
                       <button
                         className="queue-open"
@@ -172,6 +230,130 @@ export function CareerPanel({
                         <strong>{o.company}</strong>
                         <span>{o.title}</span>
                         <small>
+                          {claim.owner} ·{" "}
+                          {live
+                            ? `lease ${minutes} min`
+                            : o.lifecycle === "confirmed"
+                              ? "confirmed"
+                              : "lease lapsed without a result"}
+                        </small>
+                      </button>
+                      <ol
+                        className="flight-steps"
+                        aria-label={`Progress: step ${step + 1} of 5`}
+                      >
+                        {[
+                          "claimed",
+                          "vetted",
+                          "prepared",
+                          "submitting",
+                          "confirmed",
+                        ].map((name, i) => (
+                          <li
+                            key={name}
+                            data-state={
+                              i < step
+                                ? "done"
+                                : i === step
+                                  ? "current"
+                                  : "todo"
+                            }
+                          >
+                            {name}
+                          </li>
+                        ))}
+                      </ol>
+                    </article>
+                  );
+                })}
+                {needsPerson.length > 0 && (
+                  <>
+                    <h3>Needs a person · {needsPerson.length}</h3>
+                    {needsPerson.map((o) => (
+                      <article
+                        className="flight-row"
+                        key={o.id}
+                        data-live="false"
+                      >
+                        <button
+                          className="queue-open"
+                          onClick={() => {
+                            setTab("records");
+                            setDetail(o);
+                          }}
+                        >
+                          <strong>{o.company}</strong>
+                          <span>{o.title}</span>
+                          <small>
+                            {o.lifecycle} ·{" "}
+                            {o.provenance.at(-1)?.text.slice(0, 120)}
+                          </small>
+                        </button>
+                      </article>
+                    ))}
+                  </>
+                )}
+              </section>
+            )}
+            {!queue.length && (
+              <p>
+                No sorted roles yet. An agent adds roles here with the
+                <code> triage </code>
+                command; agents apply to everything under your grant unless you
+                put a role on hold.
+              </p>
+            )}
+            {(["hold", "approved"] as const).map((decision) => {
+              const rows = queue.filter((o) => o.triage!.decision === decision);
+              if (!rows.length) return null;
+              return (
+                <section
+                  className="queue-tier"
+                  key={decision}
+                  data-tier={decision}
+                >
+                  <h3>
+                    {decision === "hold"
+                      ? `On hold for your review · ${rows.length}`
+                      : `Agents apply under your grant · ${rows.length} · ${rows.filter((o) => o.triage!.tier === "top").length} top`}
+                  </h3>
+                  {rows.slice(0, 60).map((o) => (
+                    <article
+                      className="queue-row"
+                      key={o.id}
+                      data-decision={o.triage!.decision}
+                      data-tier={o.triage!.tier}
+                    >
+                      <button
+                        className="queue-open"
+                        onClick={() => {
+                          setTab("records");
+                          setDetail(o);
+                        }}
+                      >
+                        <strong>
+                          {o.triage!.tier === "top" && (
+                            <b className="tier-top">Top</b>
+                          )}
+                          {o.company}
+                        </strong>
+                        <span>{o.title}</span>
+                        <small>
+                          {o.vetting && (
+                            <b
+                              className="vetted"
+                              data-verdict={o.vetting.verdict}
+                            >
+                              {o.vetting.verdict === "pass"
+                                ? "Vetted"
+                                : "Failed vetting"}
+                            </b>
+                          )}
+                          {standings.has(o.companyKey) && (
+                            <CompanyCap
+                              standing={standings.get(o.companyKey)!}
+                            />
+                          )}
                           {[
                             o.location,
                             o.compensation?.annualBase
@@ -187,22 +369,28 @@ export function CareerPanel({
                         {o.triage!.reason && <p>{o.triage!.reason}</p>}
                       </button>
                       <div className="queue-actions">
-                        {o.triage!.decision === "approved" &&
-                        tier === "review" ? (
-                          <span className="queue-state">Approved</span>
+                        {decision === "hold" ? (
+                          <button
+                            onClick={() =>
+                              void save("decide", {
+                                opportunityId: o.id,
+                                decision: "approved",
+                              })
+                            }
+                          >
+                            Release
+                          </button>
                         ) : (
-                          tier === "review" && (
-                            <button
-                              onClick={() =>
-                                void save("decide", {
-                                  opportunityId: o.id,
-                                  decision: "approved",
-                                })
-                              }
-                            >
-                              Approve
-                            </button>
-                          )
+                          <button
+                            onClick={() =>
+                              void save("decide", {
+                                opportunityId: o.id,
+                                decision: "hold",
+                              })
+                            }
+                          >
+                            Hold
+                          </button>
                         )}
                         <button
                           className="quiet-button"
@@ -218,8 +406,8 @@ export function CareerPanel({
                       </div>
                     </article>
                   ))}
-                  {rows.length > 40 && (
-                    <p>{rows.length - 40} more in All records.</p>
+                  {rows.length > 60 && (
+                    <p>{rows.length - 60} more in All records.</p>
                   )}
                 </section>
               );
@@ -340,6 +528,23 @@ export function CareerPanel({
                     Open application
                   </button>
                 )}
+                {detail.vetting && (
+                  <p className="record-triage">
+                    <b data-verdict={detail.vetting.verdict}>
+                      {detail.vetting.verdict === "pass"
+                        ? "Vetted"
+                        : "Failed vetting"}
+                    </b>{" "}
+                    by {detail.vetting.by} on {detail.vetting.at.slice(0, 10)}:{" "}
+                    {detail.vetting.checks.join(", ")}
+                    {detail.vetting.note && (
+                      <>
+                        <br />
+                        {detail.vetting.note}
+                      </>
+                    )}
+                  </p>
+                )}
                 {detail.triage && (
                   <p className="record-triage">
                     Sorted as <b>{detail.triage.tier}</b>
@@ -430,7 +635,28 @@ export function CareerPanel({
                     <summary>
                       {list[0].company} · {list.length} roles ·{" "}
                       {counts(list).submitted} applied
+                      {standings.has(key) && (
+                        <>
+                          {" "}
+                          · <CompanyCap standing={standings.get(key)!} />
+                        </>
+                      )}
                     </summary>
+                    <CompanyPolicyEditor
+                      company={list[0].company}
+                      policy={career.companyPolicies.find(
+                        (p) => p.companyKey === key,
+                      )}
+                      onSave={(policy) =>
+                        void save("company-policy", { policy })
+                      }
+                      onRemove={() =>
+                        void save("company-policy", {
+                          companyKey: key,
+                          remove: true,
+                        })
+                      }
+                    />
                     {list.slice(0, companyLimits[key] ?? 50).map((o) => (
                       <button
                         className="record-row"
@@ -969,5 +1195,92 @@ function Outcomes({
         </button>
       )}
     </section>
+  );
+}
+
+/** "2 of 3 in 90 days" with the reopening date when the cap is reached. */
+function CompanyCap({ standing }: { standing: CompanyStanding }) {
+  return (
+    <b
+      className="company-cap"
+      data-at-cap={standing.atCap ? "true" : "false"}
+      title="Employer application limit"
+    >
+      {standing.used} of {standing.max} in {standing.windowDays} days
+      {standing.atCap
+        ? standing.nextEligibleAt
+          ? ` · next ${standing.nextEligibleAt.slice(0, 10)}`
+          : " · reconcile undated attempts"
+        : ""}
+    </b>
+  );
+}
+function CompanyPolicyEditor({
+  company,
+  policy,
+  onSave,
+  onRemove,
+}: {
+  company: string;
+  policy: CareerState["companyPolicies"][number] | undefined;
+  onSave: (policy: CareerState["companyPolicies"][number]) => void;
+  onRemove: () => void;
+}) {
+  const [max, setMax] = useState(String(policy?.maxApplications ?? ""));
+  const [days, setDays] = useState(String(policy?.windowDays ?? ""));
+  const [source, setSource] = useState(policy?.source ?? "");
+  return (
+    <form
+      className="company-policy"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!Number(max) || !Number(days) || !source.trim()) return;
+        onSave({
+          company,
+          companyKey: company,
+          maxApplications: Number(max),
+          windowDays: Number(days),
+          source: source.trim(),
+          note: policy?.note ?? "",
+          recordedAt: new Date().toISOString(),
+        });
+      }}
+    >
+      <label>
+        Limit
+        <input
+          type="number"
+          min={1}
+          max={100}
+          value={max}
+          onChange={(e) => setMax(e.target.value)}
+          aria-label={`${company} application limit`}
+        />
+      </label>
+      <label>
+        per
+        <input
+          type="number"
+          min={1}
+          max={730}
+          value={days}
+          onChange={(e) => setDays(e.target.value)}
+          aria-label={`${company} limit window in days`}
+        />
+        days
+      </label>
+      <input
+        value={source}
+        placeholder="Where the employer states it"
+        onChange={(e) => setSource(e.target.value)}
+        aria-label={`${company} limit source`}
+      />
+      <button type="submit">{policy ? "Update limit" : "Save limit"}</button>
+      {policy && (
+        <button type="button" className="quiet-button" onClick={onRemove}>
+          Remove limit
+        </button>
+      )}
+    </form>
   );
 }

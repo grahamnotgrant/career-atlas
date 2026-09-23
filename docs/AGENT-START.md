@@ -8,6 +8,7 @@ Use this entry point without prior chat history. Read repository `AGENTS.md` fir
 | ---------------------------------------------------- | --------------- |
 | First setup, onboarding, choosing roles              | Onboard         |
 | Continue applying, check updates, refresh the sheet  | Resume and sync |
+| Find new roles, refresh the queue                    | Scout           |
 | Change preferences, correct a record, change the app | Request changes |
 
 An agent started outside this repository must be given its checkout path and told to read `AGENTS.md`. These files do not install themselves into unrelated agents or grant account access.
@@ -51,6 +52,10 @@ The database is authoritative. Never separately edit the workbook to keep it syn
 - Save the verified workbook path in the session. An already-open Excel file is a snapshot; open the latest exported file to see updates. Background syncing requires the local server to be running.
 - Mark record synchronization and workbook export separately. Do not say the inbox, calendar, database and workbook are all current when only one was checked.
 
+## Scout
+
+Follow `skills/scout-roles/SKILL.md` after Common startup. `npm run scout -- poll` reads the employer boards listed in `DATA/scout/boards.json` from the last checkpoint; `store` saves the kept candidates as discovered opportunities through the API; `triage` sorts them. Grow the board list with any available source. Scouting never claims or submits.
+
 ## Request changes
 
 Treat the user's explicit correction as direction to act within its scope. Do not ask them to approve the same change again. Classify it before writing:
@@ -71,6 +76,7 @@ Finish record changes with read-back and export verification. Finish software ch
 
 - “Read AGENTS.md in this Career Atlas checkout and onboard me using docs/AGENT-START.md. Reuse anything already saved.”
 - “Read AGENTS.md, resume and sync authorized sources, reconcile outcomes, and verify the latest spreadsheet export. Save anything you could not check.”
+- “Read AGENTS.md and follow Scout in docs/AGENT-START.md. Poll the boards, store and triage new roles.”
 - “Read AGENTS.md and follow Request changes in docs/AGENT-START.md. My change is: …”
 
 These instructions support an agent when it runs. They do not create a scheduled inbox check or authorize messages, applications or account access.

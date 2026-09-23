@@ -481,7 +481,7 @@ test("outcomes reconcile 413 confirmed records, deduplicate file links and pagin
   await expect(page.getByRole("dialog")).toHaveCount(1);
 });
 
-test("the queue shows sorted roles, strong fits first, and records the user's decision", async ({
+test("the queue shows strong fits first, and a hold is the only thing that stops an agent", async ({
   page,
 }) => {
   const role = (id: string, title: string) => ({
@@ -497,24 +497,24 @@ test("the queue shows sorted roles, strong fits first, and records the user's de
   });
   await command(page, "opportunities", {
     opportunities: [
-      role("q-review", "Forward Deployed Engineer"),
-      role("q-auto", "Solutions Engineer"),
+      role("q-top", "Forward Deployed Engineer"),
+      role("q-standard", "Solutions Engineer"),
     ],
   });
   const decidedAt = new Date().toISOString();
   await command(page, "triage", {
-    opportunityId: "q-review",
+    opportunityId: "q-top",
     triage: {
-      tier: "review",
+      tier: "top",
       score: 92,
       reason: "Title matches the top family; pay clears the floor.",
       decidedAt,
     },
   });
   await command(page, "triage", {
-    opportunityId: "q-auto",
+    opportunityId: "q-standard",
     triage: {
-      tier: "auto",
+      tier: "standard",
       score: 70,
       reason: "Fits the active grant.",
       decidedAt,
@@ -522,28 +522,176 @@ test("the queue shows sorted roles, strong fits first, and records the user's de
   });
   await page.getByRole("button", { name: "Top roles", exact: true }).click();
   await tab(page, "Queue");
-  const review = page.locator('.queue-tier[data-tier="review"]');
-  await expect(review.locator("h3")).toHaveText(
-    "Needs your review · 1 waiting",
+  const approved = page.locator('.queue-tier[data-tier="approved"]');
+  await expect(approved.locator("h3")).toContainText(
+    "Agents apply under your grant · 2 · 1 top",
   );
-  await expect(review).toContainText("Forward Deployed Engineer");
-  await expect(review).toContainText("USD 190K base");
-  await expect(review).toContainText("fit 92");
-  await expect(page.locator('.queue-tier[data-tier="auto"] h3')).toContainText(
-    "Cleared to apply under your grant · 1",
+  await expect(approved.locator(".queue-row").first()).toHaveAttribute(
+    "data-tier",
+    "top",
   );
-  await review.getByRole("button", { name: "Approve" }).click();
-  await expect(review.locator(".queue-state")).toHaveText("Approved");
+  await expect(
+    approved.locator(".queue-row").first().locator(".tier-top"),
+  ).toHaveText("Top");
+  await expect(approved).toContainText("USD 190K base");
+  await approved
+    .locator(".queue-row")
+    .first()
+    .getByRole("button", { name: "Hold" })
+    .click();
+  const held = page.locator('.queue-tier[data-tier="hold"]');
+  await expect(held.locator("h3")).toContainText("On hold for your review · 1");
   await expect
     .poll(
       async () =>
-        (await career(page)).opportunities.find((o: any) => o.id === "q-review")
+        (await career(page)).opportunities.find((o: any) => o.id === "q-top")
           .triage,
     )
-    .toMatchObject({ decision: "approved", decidedBy: "user" });
-  await page
-    .locator('.queue-tier[data-tier="auto"]')
+    .toMatchObject({ decision: "hold", decidedBy: "user" });
+  await held.getByRole("button", { name: "Release" }).click();
+  await expect(held).toHaveCount(0);
+  await approved
+    .locator(".queue-row")
+    .last()
     .getByRole("button", { name: "Skip" })
     .click();
-  await expect(page.locator('.queue-tier[data-tier="auto"]')).toHaveCount(0);
+  await expect(approved.locator(".queue-row")).toHaveCount(1);
+});
+test("the in-flight strip follows an agent through claim, vetting and preparation", async ({
+  page,
+}) => {
+  const existing = (await career(page)).families;
+  await command(page, "families", {
+    families: [
+      ...existing,
+      {
+        id: "fam-flight",
+        name: "Flight Engineering",
+        rank: existing.length + 1,
+        evidence: ["Built a product"],
+        rationale: "Implementation",
+      },
+    ],
+  });
+  await command(page, "opportunities", {
+    opportunities: [
+      {
+        id: "flight-1",
+        company: "Orbit Works",
+        companyKey: "orbitworks",
+        title: "Deployment Engineer",
+        jobKey: "orbit|flight-1",
+        url: "https://jobs.example.com/orbit/flight-1",
+        description: "Full posting text.",
+        location: "Denver",
+        roleFamilyId: "fam-flight",
+        compensation: {
+          currency: "USD",
+          annualBase: 180000,
+          annualCash: 180000,
+        },
+      },
+    ],
+  });
+  await command(page, "grant", {
+    grant: {
+      id: "grant-flight",
+      roleFamilyIds: ["fam-flight"],
+      locations: ["Denver"],
+      exclusions: [],
+      minAnnualBase: 150000,
+      currency: "USD",
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      maxApplications: 2,
+      approvedAt: new Date().toISOString(),
+      approvalNote: "Approved batch",
+    },
+  });
+  await command(page, "claim", {
+    opportunityId: "flight-1",
+    owner: "scout-1",
+    grantId: "grant-flight",
+  });
+  await page.getByRole("button", { name: "Top roles", exact: true }).click();
+  await tab(page, "Queue");
+  const row = page.locator(".flight-row", { hasText: "Orbit Works" });
+  await expect(row).toContainText("scout-1");
+  await expect(
+    row.locator('.flight-steps li[data-state="current"]'),
+  ).toHaveText("claimed");
+  await expect(page.locator(".agent-activity")).toContainText(
+    "1 agent · 1 in flight",
+  );
+  await command(page, "vet", {
+    opportunityId: "flight-1",
+    vetting: {
+      verdict: "pass",
+      checks: ["full posting read", "pay clears floor"],
+      by: "agent",
+      at: new Date().toISOString(),
+    },
+  });
+  await expect(
+    row.locator('.flight-steps li[data-state="current"]'),
+  ).toHaveText("vetted");
+  await command(page, "release", {
+    opportunityId: "flight-1",
+    owner: "scout-1",
+    fence: 1,
+  });
+  await expect(page.locator(".agent-activity")).toHaveCount(0);
+});
+test("a recorded employer limit shows on the company and its queued roles", async ({
+  page,
+}) => {
+  await command(page, "opportunities", {
+    opportunities: [
+      {
+        id: "cap-role",
+        company: "Acme Robotics",
+        companyKey: "acmerobotics",
+        title: "Deployment Strategist",
+        jobKey: "acme|cap-role",
+        url: "https://jobs.example.com/acme/cap-role",
+        description: "Discovered by the board poll.",
+        location: "Chicago, IL",
+        compensation: { currency: "USD", annualBase: 170000, annualCash: null },
+      },
+    ],
+  });
+  await command(page, "triage", {
+    opportunityId: "cap-role",
+    triage: {
+      tier: "standard",
+      score: 60,
+      reason: "Fits the grant.",
+      decidedAt: new Date().toISOString(),
+    },
+  });
+  await page.getByRole("button", { name: "Top roles", exact: true }).click();
+  await tab(page, "Companies");
+  const acme = page.locator(".company-history", { hasText: "Acme Robotics" });
+  await acme.locator("summary").click();
+  await acme.getByLabel("Acme Robotics application limit").fill("2");
+  await acme.getByLabel("Acme Robotics limit window in days").fill("60");
+  await acme
+    .getByLabel("Acme Robotics limit source")
+    .fill("Careers FAQ: two applications per 60 days");
+  await acme.getByRole("button", { name: "Save limit" }).click();
+  await expect(acme.locator(".company-cap")).toHaveText("0 of 2 in 60 days");
+  await expect
+    .poll(async () => (await career(page)).companyPolicies)
+    .toMatchObject([
+      { companyKey: "acmerobotics", maxApplications: 2, windowDays: 60 },
+    ]);
+  await tab(page, "Queue");
+  const row = page.locator(".queue-row", { hasText: "Deployment Strategist" });
+  await expect(row.locator(".company-cap")).toHaveAttribute(
+    "data-at-cap",
+    "false",
+  );
+  await tab(page, "Companies");
+  await acme.locator("summary").click();
+  await acme.getByRole("button", { name: "Remove limit" }).click();
+  await expect(acme.locator(".company-cap")).toHaveCount(0);
 });

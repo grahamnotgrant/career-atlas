@@ -3,6 +3,7 @@ import type { Point } from "./journey";
 import { AnimatePresence, motion } from "motion/react";
 import type { CSSProperties } from "react";
 import type { Theme, HomeLocation, Application } from "../shared/model";
+import type { Opportunity } from "../shared/career";
 import { sceneCatalog } from "../shared/locations";
 
 function Palm({ x, y, scale = 1 }: { x: number; y: number; scale?: number }) {
@@ -302,12 +303,15 @@ export function Scene({
   emphasisId = null,
   uplink = null,
   signals = null,
+  opportunities = [],
   onCity,
 }: {
   theme: Theme;
   moving?: boolean;
   home: HomeLocation;
   applications: Application[];
+  /** Tracked roles; cleared ones ring their city until a submission lands. */
+  opportunities?: Opportunity[];
   highlightedIds?: ReadonlySet<string> | null;
   /** Where ribbons leave from, in scene coordinates. */
   ribbons?: { origin: Point; color: string } | null;
@@ -385,6 +389,7 @@ export function Scene({
                   }
                   emphasisId={emphasisId}
                   signals={signals}
+                  opportunities={opportunities}
                   uplink={
                     uplink && {
                       place: uplink.place,

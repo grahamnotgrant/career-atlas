@@ -36,6 +36,10 @@ const shortcuts = {
     "Review outcomes and improvements",
     "Complete startup and sync, then follow skills/review-and-improve/SKILL.md.",
   ],
+  scout: [
+    "Find and triage new roles",
+    "Complete startup, then follow skills/scout-roles/SKILL.md: poll the employer boards with `npm run scout`, store new roles as opportunities, triage them, and grow the board list with whatever sources are available. Do not claim, prepare or submit; hand triaged roles to career-apply.",
+  ],
 } as const;
 const owner = ".career-atlas-owner.json";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");

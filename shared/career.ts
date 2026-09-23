@@ -26,18 +26,29 @@ export const provenanceSchema = z.object({
   source: z.string().max(2000),
   recordedAt: date,
 });
-/** An agent's sorting of a discovered role: `review` waits for the user,
-    `auto` may proceed under an active grant, `skip` is set aside. Only the
-    user's decision moves a `review` role forward. */
+/** An agent's sorting of a discovered role. `top` marks a strong fit or high
+    pay so the user can see it; it does not stop the work. Every non-skip role
+    is approved under the grant unless the user puts it on `hold`. Only the
+    user sets hold, and an agent's re-sort never clears a user decision. */
 export const triageSchema = z.object({
-  tier: z.enum(["review", "auto", "skip"]),
+  tier: z.enum(["top", "standard", "skip"]),
   score: z.number().min(0).max(100).nullable().default(null),
   reason: z.string().max(4000).default(""),
   decidedBy: z.enum(["agent", "user"]),
   decidedAt: date,
-  decision: z.enum(["pending", "approved", "skipped"]).default("pending"),
+  decision: z.enum(["approved", "hold", "skipped"]).default("approved"),
 });
 export type Triage = z.infer<typeof triageSchema>;
+/** Someone read the full posting and checked it before a submission: pay,
+    location, eligibility, duplicates. `begin-submit` refuses without a pass. */
+export const vettingSchema = z.object({
+  verdict: z.enum(["pass", "fail"]),
+  checks: z.array(z.string().max(200)).min(1).max(20),
+  note: z.string().max(4000).default(""),
+  by: z.enum(["agent", "user"]),
+  at: date,
+});
+export type Vetting = z.infer<typeof vettingSchema>;
 export const opportunitySchema = z.object({
   id,
   company: z.string().min(1).max(200),
@@ -90,6 +101,7 @@ export const opportunitySchema = z.object({
     .default(null),
   provenance: z.array(provenanceSchema).default([]),
   triage: triageSchema.nullable().default(null),
+  vetting: vettingSchema.nullable().default(null),
   templateId: id.nullable().default(null),
   materialHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).default([]),
   answers: text.default(""),
@@ -155,6 +167,73 @@ export const grantSchema = z.object({
   state: z.enum(["active", "paused", "revoked"]).default("active"),
 });
 export type Opportunity = z.infer<typeof opportunitySchema>;
+/** An employer's stated limit on applications, e.g. three per 90 days. The
+    source quotes the employer wording or names who reported it. */
+export const companyPolicySchema = z.object({
+  companyKey: z.string().min(1).max(200),
+  company: z.string().min(1).max(200),
+  maxApplications: z.number().int().min(1).max(100),
+  windowDays: z.number().int().min(1).max(730),
+  source: z.string().min(1).max(2000),
+  note: z.string().max(4000).default(""),
+  recordedAt: date,
+});
+export type CompanyPolicy = z.infer<typeof companyPolicySchema>;
+const submittedLifecycles = ["confirmed", "attempted", "uncertain"];
+/** Where a company stands against its policy at `now`. Attempts without a
+    date are counted inside the window; they cannot be shown to be outside it. */
+export function companyStanding(
+  policy: CompanyPolicy,
+  opportunities: Opportunity[],
+  now: string,
+  excludeId: string | null = null,
+) {
+  const start = Date.parse(now) - policy.windowDays * 86_400_000;
+  const dated: number[] = [];
+  let undated = 0;
+  for (const o of opportunities) {
+    if (
+      o.id === excludeId ||
+      o.companyKey !== policy.companyKey ||
+      !submittedLifecycles.includes(o.lifecycle)
+    )
+      continue;
+    if (!o.submittedAt) {
+      if (o.lifecycle !== "confirmed") undated++;
+      continue;
+    }
+    const t = Date.parse(o.submittedAt);
+    if (t >= start) dated.push(t);
+  }
+  const used = dated.length + undated;
+  const atCap = used >= policy.maxApplications;
+  const oldest = dated.length ? Math.min(...dated) : null;
+  return {
+    used,
+    max: policy.maxApplications,
+    windowDays: policy.windowDays,
+    atCap,
+    nextEligibleAt:
+      atCap && oldest !== null && !undated
+        ? new Date(oldest + policy.windowDays * 86_400_000).toISOString()
+        : null,
+    undated,
+  };
+}
+export type CompanyStanding = ReturnType<typeof companyStanding>;
+/** The queue: sorted roles nobody has applied to yet, including ones the user holds. */
+export function isQueued(o: Opportunity) {
+  return (
+    !!o.triage &&
+    o.triage.tier !== "skip" &&
+    o.triage.decision !== "skipped" &&
+    ["discovered", "prepared"].includes(o.lifecycle)
+  );
+}
+/** Cleared: queued and not held, so an agent may apply under the grant. */
+export function isCleared(o: Opportunity) {
+  return isQueued(o) && o.triage!.decision !== "hold";
+}
 export type CareerSettings = z.infer<typeof settingsSchema>;
 export type RoleFamily = z.infer<typeof familySchema>;
 export type ResumeTemplate = z.infer<typeof templateSchema>;
@@ -166,6 +245,7 @@ export interface CareerState {
   families: RoleFamily[];
   templates: ResumeTemplate[];
   grants: Grant[];
+  companyPolicies: CompanyPolicy[];
   claims: {
     opportunityId: string;
     owner: string;
@@ -196,6 +276,8 @@ export const careerCommandSchema = z.object({
     "annotate",
     "triage",
     "decide",
+    "vet",
+    "company-policy",
   ]),
   payload: z.record(z.string(), z.unknown()),
 });

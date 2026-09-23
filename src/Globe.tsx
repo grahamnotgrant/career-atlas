@@ -13,6 +13,7 @@ import type { Topology, GeometryCollection } from "topojson-specification";
 import world from "world-atlas/land-110m.json";
 import { cityCoordinates, geographicGroups } from "../shared/locations";
 import type { Theme, HomeLocation, Application } from "../shared/model";
+import { isCleared, type Opportunity } from "../shared/career";
 import {
   placeCounts,
   ribbonPath,
@@ -32,6 +33,8 @@ export interface PlaceSignal {
   stale: number;
 }
 const GLOBE_CENTER = { x: 800, y: 455 };
+/** How long a released role's ring and spark stay on screen, in milliseconds. */
+export const QUEUE_CLEAR_DURATION = 1600;
 const topology = world as unknown as Topology<{ land: GeometryCollection }>;
 const land = feature(topology, topology.objects.land);
 const grid = geoGraticule10();
@@ -44,11 +47,15 @@ export function Globe({
   emphasisId = null,
   uplink = null,
   signals = null,
+  opportunities = [],
   onCity,
 }: {
   moving: boolean;
   home: HomeLocation;
   applications: Application[];
+  /** Tracked roles. Cleared ones (queued, not held) ring their city; when
+      one is confirmed as submitted the ring releases it into the count. */
+  opportunities?: Opportunity[];
   highlightedIds?: ReadonlySet<string> | null;
   ribbons?: GlobeRibbons | null;
   emphasisId?: string | null;
@@ -71,11 +78,68 @@ export function Globe({
     null,
   );
   const markers = useRef<Map<string, SVGGElement>>(new Map());
-  const places = useMemo(
-    () => geographicGroups(applications).filter((p) => p.coordinates),
-    [applications],
-  );
-  const placeKey = places.map((p) => p.id + ":" + p.ids.length).join("|");
+  /* Cleared roles group by the same city rules as applications. A role
+     whose location names no known city has no marker to ring. */
+  const queued = useMemo(() => {
+    const cleared = opportunities.filter(isCleared);
+    return new Map(
+      geographicGroups(
+        cleared.map((o) => ({
+          id: o.id,
+          location: o.location,
+          theme: "neutral" as const,
+        })),
+      )
+        .filter((p) => p.coordinates)
+        .map((p) => [p.id, p] as const),
+    );
+  }, [opportunities]);
+  const places = useMemo(() => {
+    const grouped = geographicGroups(applications).filter((p) => p.coordinates);
+    const seen = new Set(grouped.map((p) => p.id));
+    for (const [id, p] of queued)
+      if (!seen.has(id))
+        grouped.push({
+          id,
+          label: p.label,
+          ids: [],
+          coordinates: p.coordinates,
+        });
+    return grouped;
+  }, [applications, queued]);
+  const placeKey = places
+    .map((p) => `${p.id}:${p.ids.length}:${queued.get(p.id)?.ids.length ?? 0}`)
+    .join("|");
+  /* A cleared role that turns into a confirmed submission leaves the ring
+     with a short release animation; nothing else exiting the queue animates. */
+  const [clearing, setClearing] = useState<
+    { id: string; place: string; key: number }[]
+  >([]);
+  const previousCleared = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    const current = new Map<string, string>();
+    for (const [place, p] of queued)
+      for (const id of p.ids) current.set(id, place);
+    const before = previousCleared.current;
+    previousCleared.current = current;
+    if (!before) return;
+    const confirmed = new Set(
+      opportunities.filter((o) => o.lifecycle === "confirmed").map((o) => o.id),
+    );
+    const released = [...before]
+      .filter(([id]) => !current.has(id) && confirmed.has(id))
+      .map(([id, place]) => ({ id, place, key: Date.now() + Math.random() }));
+    if (!released.length) return;
+    setClearing((c) => [...c, ...released]);
+    const timer = setTimeout(
+      () =>
+        setClearing((c) =>
+          c.filter((entry) => !released.some((r) => r.key === entry.key)),
+        ),
+      QUEUE_CLEAR_DURATION,
+    );
+    return () => clearTimeout(timer);
+  }, [queued, opportunities]);
   const ribbonPaths = useRef<Map<string, SVGGElement>>(new Map());
   const uplinkPath = useRef<SVGPathElement>(null);
   const uplinkKey = uplink
@@ -125,11 +189,13 @@ export function Globe({
           26,
           String(place.ids.length).length * 8 + 12,
         );
+        const queuedCount = queued.get(place.id)?.ids.length ?? 0;
         return [
           place.id,
           Math.max(
             text?.getComputedTextLength() ?? 0,
-            place.label.length * 8.5,
+            place.label.length * 8.5 +
+              (queuedCount ? `· ${queuedCount} cleared`.length * 7.5 : 0),
           ) +
             countWidth +
             22,
@@ -483,9 +549,16 @@ export function Globe({
             if (el) markers.current.set(place.id, el);
             else markers.current.delete(place.id);
           }}
+          data-queued={queued.get(place.id)?.ids.length || undefined}
+          data-queue-only={place.ids.length === 0 || undefined}
           role="button"
           tabIndex={present ? 0 : -1}
           aria-label={`${place.label}: ${place.ids.length} applications`}
+          aria-description={
+            queued.get(place.id)
+              ? `${queued.get(place.id)!.ids.length} cleared to apply`
+              : undefined
+          }
           onClick={() => onCity(place.id, place.ids)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -503,6 +576,42 @@ export function Globe({
             opacity=".65"
             pointerEvents="none"
           />
+          {queued.get(place.id) && (
+            <circle
+              className="queue-ring"
+              r={8 + Math.min(6, queued.get(place.id)!.ids.length)}
+              fill="none"
+              stroke="#ffd27a"
+              strokeWidth="1.5"
+              strokeDasharray="3 3"
+              pointerEvents="none"
+            >
+              <title>
+                {queued.get(place.id)!.ids.length} cleared to apply in{" "}
+                {place.label}
+              </title>
+            </circle>
+          )}
+          {clearing
+            .filter((c) => c.place === place.id)
+            .map((c) => (
+              <g
+                key={c.key}
+                className="queue-clear"
+                data-clearing={c.id}
+                aria-hidden="true"
+                pointerEvents="none"
+              >
+                <circle
+                  className="queue-clear-ring"
+                  r="10"
+                  fill="none"
+                  stroke="#ffd27a"
+                  strokeWidth="2"
+                />
+                <circle className="queue-clear-spark" r="3" fill="#fff3c4" />
+              </g>
+            ))}
           <circle r="3.5" fill="#b7eaff" stroke="#071424" strokeWidth="1" />
           <g data-city-label>
             <rect
@@ -535,6 +644,11 @@ export function Globe({
               fontWeight="600"
             >
               {place.label}
+              {queued.get(place.id) && (
+                <tspan data-queue-count dx="7">
+                  · {queued.get(place.id)!.ids.length} cleared
+                </tspan>
+              )}
             </text>
           </g>
         </g>

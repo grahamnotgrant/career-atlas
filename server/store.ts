@@ -1,6 +1,11 @@
 import { transaction } from "./transaction";
 import { opportunitySchema } from "../shared/career";
-import { CareerStore, migrateCareer } from "./career";
+import {
+  CareerStore,
+  migrateCareer,
+  migrateTriage,
+  NORMALIZE_TRIAGE,
+} from "./career";
 import { applicationScene } from "../shared/locations";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -66,7 +71,8 @@ export class Store {
     const version = (
       this.db.prepare("PRAGMA user_version").get() as { user_version: number }
     ).user_version;
-    if (version > 3) {
+    // Bump with every migration that changes user_version.
+    if (version > 4) {
       this.db.close();
       throw new Error("Database version is newer than this app.");
     }
@@ -95,6 +101,13 @@ export class Store {
         .run(join(dir, "backups", `before-v3-${Date.now()}.sqlite`));
       migrateCareer(this.db);
     }
+    if (version < 4) {
+      this.db
+        .prepare("VACUUM INTO ?")
+        .run(join(dir, "backups", `before-v4-${Date.now()}.sqlite`));
+      migrateTriage(this.db);
+    }
+    this.db.exec(NORMALIZE_TRIAGE);
     this.db
       .prepare("INSERT OR IGNORE INTO metadata (key,value) VALUES (?,?)")
       .run("workspaceId", randomBytes(24).toString("hex"));
