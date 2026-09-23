@@ -83,10 +83,13 @@ Provenance kinds are `employer`, `user`, `hypothesis` and `source`. Do not recor
 npm run scout -- seed
 npm run scout -- poll [--days N] [--all-titles] [--any-location]
 npm run scout -- store /absolute/private/scout/candidates-<time>.json [--limit N]
-npm run scout -- add <ashby|greenhouse|lever> <slug> "<Company>"
+npm run scout -- add <ashby|greenhouse|lever|workable|smartrecruiters> <slug> "<Company>"
+npm run scout -- add workday <tenant> "<Company>" --host wd5 --site <site>
+npm run scout -- probe "<Company>" "<careers URL>" ...
+npm run scout -- discover --hn 2 --names /absolute/private/names.txt
 ```
 
-The board list, checkpoint and candidate files live under private `scout/`. `store` posts an `opportunities` command with `discovered` lifecycle and employer provenance; it rejects URLs already stored and never submits. See `skills/scout-roles/SKILL.md`.
+Six board types are read directly: Ashby, Greenhouse, Lever, Workable, SmartRecruiters and Workday (the enterprise tier; searched by role keywords because a tenant lists thousands of jobs). `probe` takes company names or careers URLs, tries every board type and adds the ones that answer with postings. `discover` feeds `probe` from the last N monthly Hacker News hiring threads and from any list of company names, one per line, such as a Fortune 1000 or a VC portfolio. The board list, checkpoint and candidate files live under private `scout/`. `store` posts an `opportunities` command with `discovered` lifecycle and employer provenance; it rejects URLs already stored and never submits. See `skills/scout-roles/SKILL.md`.
 
 ## View and exports
 

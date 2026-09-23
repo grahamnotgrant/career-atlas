@@ -12,8 +12,10 @@ import { dataDirectory } from "../server/paths";
 import {
   boardFromUrl,
   boardListSchema,
-  boardUrl,
+  boardRequests,
   canonicalJobUrl,
+  hiringThreadCompanies,
+  slugGuesses,
   checkpointSchema,
   defaultTitlePatterns,
   filterPostings,
@@ -25,7 +27,10 @@ import {
 
 const usage = `Usage:
   npm run scout -- seed                      Add every ATS board found in stored opportunity URLs
-  npm run scout -- add <ashby|greenhouse|lever> <slug> [company]
+  npm run scout -- add <ashby|greenhouse|lever|workable|smartrecruiters> <slug> [company]
+  npm run scout -- add workday <tenant> <company> --host wd5 --site <site>
+  npm run scout -- probe <company name or careers URL> ...   Try every board type; add what answers
+  npm run scout -- discover [--hn N] [--names /absolute/names.txt]   Probe companies from the last N Hacker News hiring threads and/or a names file
   npm run scout -- poll [--days N] [--all-titles] [--any-location]
   npm run scout -- store /absolute/candidates.json [--limit N]
 
@@ -83,12 +88,90 @@ async function careerState() {
   };
 }
 async function fetchBoard(b: Board) {
-  const r = await fetch(boardUrl(b), {
-    headers: { "User-Agent": "career-atlas-scout" },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!r.ok) throw new Error(`${r.status}`);
-  return parseBoard(b, await r.json());
+  const rows: Posting[] = [];
+  const seen = new Set<string>();
+  for (const req of boardRequests(b)) {
+    const r = await fetch(req.url, {
+      ...req.init,
+      headers: {
+        "User-Agent": "career-atlas-scout",
+        ...(req.init?.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!r.ok) throw new Error(`${r.status}`);
+    for (const row of parseBoard(b, await r.json()))
+      if (!seen.has(row.url)) {
+        seen.add(row.url);
+        rows.push(row);
+      }
+  }
+  return rows;
+}
+/** Workday search results carry no description and only a relative date;
+    one detail call per kept candidate fills both. */
+async function workdayDetails(rows: Posting[]) {
+  for (const row of rows) {
+    if (row.ats !== "workday") continue;
+    try {
+      const u = new URL(row.url);
+      const path = u.pathname.replace(/^\/[^/]+/, "");
+      const r = await fetch(
+        `https://${u.hostname}/wday/cxs/${row.slug}/${u.pathname.split("/")[1]}${path}`,
+        {
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "career-atlas-scout",
+          },
+          signal: AbortSignal.timeout(20000),
+        },
+      );
+      if (!r.ok) continue;
+      const info =
+        ((await r.json()) as { jobPostingInfo?: Record<string, unknown> })
+          .jobPostingInfo ?? {};
+      if (typeof info.jobDescription === "string")
+        row.description = info.jobDescription
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 100000);
+      if (typeof info.startDate === "string")
+        row.publishedAt = `${info.startDate}T00:00:00.000Z`;
+      if (typeof info.location === "string" && info.location)
+        row.location = info.location;
+    } catch {
+      /* Keep the search-result row; the agent reads the page before vetting. */
+    }
+  }
+}
+/** Try every board type for a company name; the first that answers with postings wins. */
+async function probeCompany(name: string): Promise<Board | null> {
+  const tried: string[] = [];
+  for (const slug of slugGuesses(name))
+    for (const ats of [
+      "ashby",
+      "greenhouse",
+      "lever",
+      "workable",
+      "smartrecruiters",
+    ] as const) {
+      const board: Board = {
+        ats,
+        slug,
+        company: name,
+        addedAt: new Date().toISOString(),
+        source: "probe",
+      };
+      tried.push(`${ats}:${slug}`);
+      try {
+        const rows = await fetchBoard(board);
+        if (rows.length) return board;
+      } catch {
+        /* not this one */
+      }
+    }
+  return null;
 }
 const flag = (name: string) => process.argv.includes(name);
 const option = (name: string) => {
@@ -131,19 +214,122 @@ if (action === "seed") {
     }),
   );
 } else if (action === "add") {
-  const [, ats, slug, company = ""] = process.argv.slice(2);
+  const [, ats, slug, company = ""] = process.argv
+    .slice(2)
+    .filter(
+      (a, i, all) =>
+        !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--")),
+    );
   const board = boardListSchema.shape.boards.element.parse({
     ats,
     slug,
-    company,
+    company: company.startsWith("--") ? "" : company,
     addedAt: new Date().toISOString(),
     source: "agent",
+    ...(ats === "workday"
+      ? { host: option("--host"), site: option("--site") }
+      : {}),
   });
   await fetchBoard(board);
   const after = saveBoards([...readBoards(), board]);
   console.log(
     JSON.stringify({ boards: after.length, added: `${ats}:${slug}` }),
   );
+} else if (action === "probe" || action === "discover") {
+  const inputs: string[] = [];
+  if (action === "probe")
+    inputs.push(...process.argv.slice(3).filter((a) => !a.startsWith("--")));
+  else {
+    const months = Number(option("--hn") ?? 0);
+    if (months) {
+      const stories = (await (
+        await fetch(
+          `https://hn.algolia.com/api/v1/search_by_date?tags=story,author_whoishiring&query=%22who%20is%20hiring%22&hitsPerPage=${months}`,
+          { signal: AbortSignal.timeout(20000) },
+        )
+      ).json()) as { hits: { objectID: string; title: string }[] };
+      for (const story of stories.hits.filter((h) =>
+        /who is hiring/i.test(h.title),
+      )) {
+        const item = (await (
+          await fetch(`https://hn.algolia.com/api/v1/items/${story.objectID}`, {
+            signal: AbortSignal.timeout(30000),
+          })
+        ).json()) as { children: { text: string | null }[] };
+        inputs.push(
+          ...hiringThreadCompanies(item.children.map((c) => c.text ?? "")),
+        );
+        console.error(`${story.title}: ${item.children.length} comments`);
+      }
+    }
+    const namesFile = option("--names");
+    if (namesFile)
+      inputs.push(
+        ...readFileSync(resolve(namesFile), "utf8")
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => l && !l.startsWith("#")),
+      );
+    if (!inputs.length) throw new Error(usage);
+  }
+  const existing = readBoards();
+  const known = new Set(
+    existing.map((b) => `${b.ats}:${b.slug.toLowerCase()}`),
+  );
+  const knownCompanies = new Set(existing.map((b) => b.company.toLowerCase()));
+  const added: Board[] = [];
+  const missed: string[] = [];
+  let i = 0;
+  const unique = [...new Set(inputs)];
+  await Promise.all(
+    Array.from({ length: 6 }, async () => {
+      while (i < unique.length) {
+        const input = unique[i++];
+        let board: Board | null = null;
+        if (/^https?:\/\//.test(input)) {
+          board = boardFromUrl(input);
+          if (board && !board.company)
+            board.company = board.slug
+              .replace(/[-_]+/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+          if (board) {
+            try {
+              await fetchBoard(board);
+            } catch {
+              board = null;
+            }
+          }
+        } else if (!knownCompanies.has(input.toLowerCase()))
+          board = await probeCompany(input);
+        else continue;
+        if (board && !known.has(`${board.ats}:${board.slug.toLowerCase()}`)) {
+          known.add(`${board.ats}:${board.slug.toLowerCase()}`);
+          added.push({
+            ...board,
+            addedAt: new Date().toISOString(),
+            source: action === "probe" ? "probe" : "discover",
+          });
+        } else if (!board) missed.push(input);
+      }
+    }),
+  );
+  const after = saveBoards([...existing, ...added]);
+  console.log(
+    JSON.stringify(
+      {
+        inputs: unique.length,
+        added: added.map((b) => `${b.ats}:${b.slug} (${b.company})`),
+        missed: missed.length,
+        boards: after.length,
+      },
+      null,
+      2,
+    ),
+  );
+  if (missed.length)
+    console.error(
+      `No public board found for: ${missed.slice(0, 40).join("; ")}${missed.length > 40 ? "; …" : ""}`,
+    );
 } else if (action === "poll") {
   const boards = readBoards();
   if (!boards.length) throw new Error("No boards. Run seed or add first.");
@@ -181,7 +367,11 @@ if (action === "seed") {
     locations: flag("--any-location") ? [] : state.settings.locations,
     since,
     knownUrls,
-  }).sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
+  });
+  await workdayDetails(candidates);
+  candidates.sort((a, b) =>
+    (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""),
+  );
   const out = join(
     scoutDir,
     `candidates-${polledAt.replace(/[:.]/g, "-")}.json`,

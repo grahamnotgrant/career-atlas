@@ -1,8 +1,18 @@
 import { z } from "zod";
 import { companyIdentity } from "./career";
 
-/** Public job-board JSON endpoints. No account, key or connector is needed. */
-export const atsSchema = z.enum(["ashby", "greenhouse", "lever"]);
+/** Public job-board JSON endpoints. No account, key or connector is needed.
+    Workday boards are the enterprise tier: each tenant exposes a search API
+    per career site, so a Workday board needs the tenant, its host shard and
+    the site name, all visible in the careers URL. */
+export const atsSchema = z.enum([
+  "ashby",
+  "greenhouse",
+  "lever",
+  "workable",
+  "smartrecruiters",
+  "workday",
+]);
 export type Ats = z.infer<typeof atsSchema>;
 export const boardSchema = z.object({
   ats: atsSchema,
@@ -10,6 +20,15 @@ export const boardSchema = z.object({
   company: z.string().max(200).default(""),
   addedAt: z.iso.datetime().nullable().default(null),
   source: z.string().max(500).default(""),
+  /** Workday only: host shard such as wd5 and the career-site name. */
+  host: z
+    .string()
+    .regex(/^wd\d{1,3}$/)
+    .optional(),
+  site: z
+    .string()
+    .regex(/^[A-Za-z0-9._-]{1,100}$/)
+    .optional(),
 });
 export type Board = z.infer<typeof boardSchema>;
 export const boardListSchema = z.object({
@@ -24,12 +43,83 @@ export const checkpointSchema = z.object({
   failed: z.array(z.string()),
 });
 
+export interface BoardRequest {
+  url: string;
+  init?: { method: "POST"; headers: Record<string, string>; body: string };
+}
+/** Workday lists at most 20 postings per call and thousands per tenant, so
+    it is searched by these terms instead of read whole. */
+export const workdaySearchTerms = [
+  "forward deployed",
+  "solutions engineer",
+  "solutions architect",
+  "applied ai",
+  "ai engineer",
+  "implementation",
+  "deployment",
+  "customer engineer",
+];
+export function boardRequests(b: Board): BoardRequest[] {
+  switch (b.ats) {
+    case "ashby":
+      return [
+        {
+          url: `https://api.ashbyhq.com/posting-api/job-board/${b.slug}?includeCompensation=true`,
+        },
+      ];
+    case "greenhouse":
+      return [
+        {
+          url: `https://boards-api.greenhouse.io/v1/boards/${b.slug}/jobs?content=true`,
+        },
+      ];
+    case "lever":
+      return [{ url: `https://api.lever.co/v0/postings/${b.slug}?mode=json` }];
+    case "workable":
+      return [
+        {
+          url: `https://apply.workable.com/api/v3/accounts/${b.slug}/jobs`,
+          init: {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: "",
+              location: [],
+              department: [],
+              worktype: [],
+              remote: [],
+            }),
+          },
+        },
+      ];
+    case "smartrecruiters":
+      return [
+        {
+          url: `https://api.smartrecruiters.com/v1/companies/${b.slug}/postings?limit=100`,
+        },
+      ];
+    case "workday":
+      return workdaySearchTerms.map((term) => ({
+        url: `https://${b.slug}.${b.host}.myworkdayjobs.com/wday/cxs/${b.slug}/${b.site}/jobs`,
+        init: {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            appliedFacets: {},
+            limit: 20,
+            offset: 0,
+            searchText: term,
+          }),
+        },
+      }));
+  }
+}
+/** Kept for callers that only need one address; Workday boards use boardRequests. */
 export function boardUrl(b: Board) {
-  return {
-    ashby: `https://api.ashbyhq.com/posting-api/job-board/${b.slug}?includeCompensation=true`,
-    greenhouse: `https://boards-api.greenhouse.io/v1/boards/${b.slug}/jobs?content=true`,
-    lever: `https://api.lever.co/v0/postings/${b.slug}?mode=json`,
-  }[b.ats];
+  return boardRequests(b)[0].url;
 }
 
 /** Recognize an ATS board from a job URL already stored or found anywhere. */
@@ -55,7 +145,86 @@ export function boardFromUrl(url: string): Board | null {
     };
   if (u.hostname === "jobs.lever.co")
     return { ats: "lever", slug: seg, company: "", addedAt: null, source: url };
+  if (u.hostname === "apply.workable.com" && seg !== "api")
+    return {
+      ats: "workable",
+      slug: seg,
+      company: "",
+      addedAt: null,
+      source: url,
+    };
+  if (/^(jobs|careers)\.smartrecruiters\.com$/.test(u.hostname))
+    return {
+      ats: "smartrecruiters",
+      slug: seg,
+      company: "",
+      addedAt: null,
+      source: url,
+    };
+  const wd = u.hostname.match(
+    /^([a-z0-9-]+)\.(wd\d{1,3})\.myworkdayjobs\.com$/i,
+  );
+  if (wd) {
+    const parts = u.pathname.split("/").filter(Boolean);
+    const site =
+      parts[0] === "en-US" || /^[a-z]{2}-[A-Z]{2}$/.test(parts[0] ?? "")
+        ? parts[1]
+        : parts[0];
+    if (!site || !/^[A-Za-z0-9._-]{1,100}$/.test(site) || site === "wday")
+      return null;
+    return {
+      ats: "workday",
+      slug: wd[1].toLowerCase(),
+      host: wd[2].toLowerCase(),
+      site,
+      company: "",
+      addedAt: null,
+      source: url,
+    };
+  }
   return null;
+}
+/** Slugs worth trying for a company name on the boards that key by slug. */
+export function slugGuesses(company: string) {
+  const base = company
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\b(inc|llc|ltd|corp|corporation|co|the)\b\.?/g, " ")
+    .trim();
+  const compact = base.replace(/[^a-z0-9]+/g, "");
+  const dashed = base.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const noSuffix = compact.replace(/(ai|hq|labs|app|io)$/, "");
+  return [
+    ...new Set(
+      [compact, dashed, noSuffix, `${compact}ai`, `${noSuffix}ai`].filter(
+        (s) => s.length >= 2,
+      ),
+    ),
+  ];
+}
+/** "Company | Role | Location | …" lines from the monthly Hacker News hiring thread. */
+export function hiringThreadCompanies(commentTexts: string[]) {
+  const names = new Set<string>();
+  for (const raw of commentTexts) {
+    const text = raw
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&#x2F;/g, "/")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .trim();
+    const first = text.split(/\s*\|\s*/)[0]?.trim() ?? "";
+    const name = first
+      .replace(/\s*[\(\[].*$/, "")
+      .replace(/\s+https?:\/\/\S+.*$/, "")
+      .replace(/[.,:;!]+$/, "")
+      .trim();
+    if (name.length < 2 || name.length > 60 || !/[a-z]/i.test(name)) continue;
+    if (/^(location|remote|seeking|hiring|we|i am|i'm)\b/i.test(name)) continue;
+    if (text.split("|").length < 3) continue;
+    names.add(name);
+  }
+  return [...names];
 }
 
 export interface Posting {
@@ -177,7 +346,109 @@ export function parseBoard(b: Board, body: unknown): Posting[] {
           clip(j.descriptionPlain) || htmlToText(clip(j.description)),
       });
     }
+  else if (b.ats === "workable" && Array.isArray(o.results))
+    for (const j of o.results as Record<string, unknown>[]) {
+      const loc = (j.location ?? {}) as Record<string, unknown>;
+      const location = [
+        clip(loc.city, 100),
+        clip(loc.region, 100),
+        clip(loc.country, 100),
+      ]
+        .filter(Boolean)
+        .join(", ");
+      const workplace = clip(loc.workplaceType ?? j.workplace, 40);
+      rows.push({
+        ats: "workable",
+        slug: b.slug,
+        company: b.company || b.slug,
+        title: clip(j.title, 300),
+        url:
+          clip(j.url, 2000) ||
+          (j.shortcode
+            ? `https://apply.workable.com/${b.slug}/j/${clip(j.shortcode, 40)}/`
+            : ""),
+        location,
+        workArrangement: arrangement(j.remote === true, workplace, location),
+        publishedAt: clip(j.published, 40) || null,
+        compensation: { currency: "USD", min: null, max: null },
+        compensationSummary: "",
+        description: htmlToText(clip(j.description)),
+      });
+    }
+  else if (b.ats === "smartrecruiters" && Array.isArray(o.content))
+    for (const j of o.content as Record<string, unknown>[]) {
+      const loc = (j.location ?? {}) as Record<string, unknown>;
+      const location = [
+        clip(loc.city, 100),
+        clip(loc.region, 100),
+        clip(loc.country, 10).toUpperCase(),
+      ]
+        .filter(Boolean)
+        .join(", ");
+      const id = clip(j.id, 40);
+      rows.push({
+        ats: "smartrecruiters",
+        slug: b.slug,
+        company:
+          b.company ||
+          clip((j.company as Record<string, unknown>)?.name, 200) ||
+          b.slug,
+        title: clip(j.name, 300).trim(),
+        url: id ? `https://jobs.smartrecruiters.com/${b.slug}/${id}` : "",
+        location,
+        workArrangement: arrangement(
+          loc.remote === true,
+          loc.hybrid === true ? "hybrid" : "",
+          location,
+        ),
+        publishedAt: clip(j.releasedDate, 40) || null,
+        compensation: { currency: "USD", min: null, max: null },
+        compensationSummary: "",
+        description: "",
+      });
+    }
+  else if (b.ats === "workday" && Array.isArray(o.jobPostings))
+    for (const j of o.jobPostings as Record<string, unknown>[]) {
+      const path = clip(j.externalPath, 500);
+      const location = clip(j.locationsText, 300);
+      rows.push({
+        ats: "workday",
+        slug: b.slug,
+        company: b.company || b.slug,
+        title: clip(j.title, 300),
+        url: path
+          ? `https://${b.slug}.${b.host}.myworkdayjobs.com/${b.site}${path}`
+          : "",
+        location,
+        workArrangement: arrangement(null, "", location),
+        publishedAt: workdayPostedOn(
+          clip(j.postedOn, 60),
+          b.addedAt ? null : null,
+        ),
+        compensation: { currency: "USD", min: null, max: null },
+        compensationSummary: "",
+        description: "",
+      });
+    }
   return rows.filter((r) => r.title && r.url);
+}
+/** Workday lists "Posted 5 Days Ago"; the detail call later gives the exact date. */
+export function workdayPostedOn(
+  text: string,
+  now: string | null,
+  today = new Date(),
+) {
+  const m = text.match(
+    /posted\s+(today|yesterday|(\d+)\+?\s+days?\s+ago|(\d+)\+?\s+hours?\s+ago|(\d+)\+?\s+minutes?\s+ago)/i,
+  );
+  if (!m) return null;
+  const days = /today|hour|minute/i.test(m[1])
+    ? 0
+    : /yesterday/i.test(m[1])
+      ? 1
+      : Number(m[2] ?? 0);
+  const d = new Date(today.getTime() - days * 86_400_000);
+  return d.toISOString();
 }
 
 export interface ScoutFilter {

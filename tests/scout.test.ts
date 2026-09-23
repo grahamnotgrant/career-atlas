@@ -4,6 +4,11 @@ import { opportunitySchema } from "../shared/career";
 import {
   boardFromUrl,
   boardListSchema,
+  boardRequests,
+  hiringThreadCompanies,
+  slugGuesses,
+  workdayPostedOn,
+  workdaySearchTerms,
   defaultTitlePatterns,
   filterPostings,
   locationMatches,
@@ -223,4 +228,145 @@ it("builds an opportunity the career schema accepts", () => {
   expect(JSON.parse(o.provenance[0].text).publishedAt).toBe(
     "2026-09-22T00:00:00Z",
   );
+});
+
+it("recognizes Workable, SmartRecruiters and Workday boards from URLs", () => {
+  expect(
+    boardFromUrl("https://apply.workable.com/hotjar/j/ABC123/"),
+  ).toMatchObject({
+    ats: "workable",
+    slug: "hotjar",
+  });
+  expect(
+    boardFromUrl(
+      "https://jobs.smartrecruiters.com/Bosch/744000148454651-engineer",
+    ),
+  ).toMatchObject({ ats: "smartrecruiters", slug: "Bosch" });
+  expect(
+    boardFromUrl(
+      "https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced/job/San-Jose/Engineer_R1",
+    ),
+  ).toMatchObject({
+    ats: "workday",
+    slug: "adobe",
+    host: "wd5",
+    site: "external_experienced",
+  });
+  expect(
+    boardFromUrl("https://adobe.wd5.myworkdayjobs.com/wday/cxs/adobe/x/jobs"),
+  ).toBeNull();
+});
+
+it("parses the three new board formats and Workday's relative dates", () => {
+  const wd: Board = {
+    ats: "workday",
+    slug: "adobe",
+    host: "wd5",
+    site: "external_experienced",
+    company: "Adobe",
+    addedAt: null,
+    source: "",
+  };
+  const rows = parseBoard(wd, {
+    jobPostings: [
+      {
+        title: "AEP Lead Data Solutions Engineer",
+        externalPath: "/job/San-Jose/AEP_R166535",
+        locationsText: "San Jose",
+        postedOn: "Posted 5 Days Ago",
+      },
+    ],
+  });
+  expect(rows[0].url).toBe(
+    "https://adobe.wd5.myworkdayjobs.com/external_experienced/job/San-Jose/AEP_R166535",
+  );
+  expect(Date.now() - Date.parse(rows[0].publishedAt!)).toBeGreaterThan(
+    4.9 * 86_400_000,
+  );
+  expect(workdayPostedOn("Posted Today", null)).not.toBeNull();
+  expect(
+    workdayPostedOn(
+      "Posted 30+ Days Ago",
+      null,
+      new Date("2026-09-23T00:00:00Z"),
+    ),
+  ).toBe("2026-08-24T00:00:00.000Z");
+  expect(workdayPostedOn("nothing", null)).toBeNull();
+  const sr: Board = {
+    ats: "smartrecruiters",
+    slug: "smartrecruiters",
+    company: "",
+    addedAt: null,
+    source: "",
+  };
+  expect(
+    parseBoard(sr, {
+      content: [
+        {
+          id: "744000148454651",
+          name: "Data Operations Consultant ",
+          releasedDate: "2026-09-09T09:43:26.403Z",
+          location: {
+            city: "Poland",
+            region: "Remote",
+            country: "pl",
+            remote: true,
+          },
+          company: { name: "SmartRecruiters Inc" },
+        },
+      ],
+    })[0],
+  ).toMatchObject({
+    company: "SmartRecruiters Inc",
+    title: "Data Operations Consultant",
+    url: "https://jobs.smartrecruiters.com/smartrecruiters/744000148454651",
+    workArrangement: "remote",
+  });
+  const wk: Board = {
+    ats: "workable",
+    slug: "acme",
+    company: "",
+    addedAt: null,
+    source: "",
+  };
+  expect(
+    parseBoard(wk, {
+      results: [
+        {
+          title: "Solutions Engineer",
+          shortcode: "AB12CD",
+          published: "2026-09-20T00:00:00Z",
+          remote: false,
+          location: {
+            city: "Austin",
+            region: "TX",
+            country: "United States",
+            workplaceType: "hybrid",
+          },
+        },
+      ],
+    })[0],
+  ).toMatchObject({
+    url: "https://apply.workable.com/acme/j/AB12CD/",
+    location: "Austin, TX, United States",
+    workArrangement: "hybrid",
+  });
+  expect(workdaySearchTerms.length).toBeGreaterThan(3);
+  expect(boardRequests(wd)).toHaveLength(workdaySearchTerms.length);
+  expect(boardRequests(wd)[0].init?.method).toBe("POST");
+});
+
+it("guesses slugs from company names and reads companies out of the HN hiring thread", () => {
+  expect(slugGuesses("Acme Robotics, Inc.")).toContain("acmerobotics");
+  expect(slugGuesses("Acme Robotics, Inc.")).toContain("acme-robotics");
+  expect(slugGuesses("Scope Labs")).toContain("scope");
+  expect(
+    hiringThreadCompanies([
+      "Modash.io | Senior Product Engineer | Remote (Europe) | Full-time | €75k–110k |  https:&#x2F;&#x2F;modash.io",
+      "<p>Quill | Fullstack SWE | Full-time | Remote</p>",
+      "Snout  https:&#x2F;&#x2F;snout.com&#x2F;  | Multiple Engineering + Product Roles | Remote US",
+      "I am looking for work, python, remote",
+      "Location: Chicago | Remote: yes | Technologies: Python",
+    ]),
+  ).toEqual(["Modash.io", "Quill", "Snout"]);
 });
