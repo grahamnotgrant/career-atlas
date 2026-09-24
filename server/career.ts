@@ -24,6 +24,7 @@ import {
   type Application,
 } from "../shared/model";
 import { registerCities } from "../shared/locations";
+import { canonicalJobUrl } from "../shared/scout";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -281,18 +282,7 @@ export class CareerStore {
             .object({ opportunities: z.array(opportunitySchema).max(10000) })
             .strict()
             .parse(p);
-          const canonicalUrl = (value: string) => {
-            const u = new URL(value);
-            for (const k of [...u.searchParams.keys()])
-              if (
-                k.startsWith("utm_") ||
-                ["source", "ref", "referrer"].includes(k)
-              )
-                u.searchParams.delete(k);
-            u.searchParams.sort();
-            u.pathname = u.pathname.replace(/\/$/, "");
-            return u.toString();
-          };
+          const canonicalUrl = canonicalJobUrl;
           const seenUrls = new Map(
             state.opportunities
               .filter((o) => o.url)

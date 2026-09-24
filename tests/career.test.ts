@@ -910,3 +910,32 @@ it("stores a custom city, registers it for themes and locations, and removes it"
     /No custom city/,
   );
 });
+it("rejects a Greenhouse posting already stored under another host as a duplicate", () => {
+  const { run } = setup();
+  const role = (id: string, url: string) =>
+    opportunitySchema.parse({
+      id,
+      jobKey: id,
+      company: "Justworks",
+      companyKey: "justworks",
+      title: "Senior AI Enablement Engineer",
+      url,
+      description: "",
+      location: "New York",
+    });
+  run("opportunities", {
+    opportunities: [
+      role("a", "https://job-boards.greenhouse.io/justworks/jobs/8214215"),
+    ],
+  });
+  expect(() =>
+    run("opportunities", {
+      opportunities: [
+        role(
+          "b",
+          "https://boards.greenhouse.io/justworks/jobs/8214215?gh_jid=8214215",
+        ),
+      ],
+    }),
+  ).toThrow(/already belongs/);
+});

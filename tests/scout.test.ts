@@ -5,6 +5,7 @@ import {
   boardFromUrl,
   boardListSchema,
   boardRequests,
+  canonicalJobUrl,
   hiringThreadCompanies,
   slugGuesses,
   workdayPostedOn,
@@ -369,4 +370,27 @@ it("guesses slugs from company names and reads companies out of the HN hiring th
       "Location: Chicago | Remote: yes | Technologies: Python",
     ]),
   ).toEqual(["Modash.io", "Quill", "Snout"]);
+});
+
+it("treats the same Greenhouse posting on any host or employer embed as one URL", () => {
+  const same = [
+    "https://boards.greenhouse.io/justworks/jobs/8214215?gh_jid=8214215",
+    "https://job-boards.greenhouse.io/justworks/jobs/8214215",
+    "https://job-boards.greenhouse.io/justworks/jobs/8214215?utm_source=x&ref=y",
+    "https://boards.eu.greenhouse.io/justworks/jobs/8214215/",
+    "https://JOB-BOARDS.greenhouse.io/justworks/jobs/8214215#app",
+  ].map(canonicalJobUrl);
+  expect(new Set(same).size).toBe(1);
+  expect(same[0]).toBe(
+    "https://job-boards.greenhouse.io/justworks/jobs/8214215",
+  );
+  expect(
+    canonicalJobUrl(
+      "https://www.fastly.com/about/jobs/apply?gh_jid=8220907&utm_source=li",
+    ),
+  ).toBe("https://www.fastly.com/about/jobs/apply?gh_jid=8220907");
+  expect(canonicalJobUrl("https://jobs.ashbyhq.com/acme/1?utm_medium=a")).toBe(
+    "https://jobs.ashbyhq.com/acme/1",
+  );
+  expect(canonicalJobUrl("not a url")).toBe("not a url");
 });

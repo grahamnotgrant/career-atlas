@@ -462,14 +462,37 @@ export interface ScoutFilter {
   knownUrls: Set<string>;
 }
 
+/** One address per posting. Tracking parameters go; Greenhouse serves the
+    same board from boards., job-boards. and regional hosts, and embeds it on
+    employer sites as ?gh_jid=, so those collapse to one form too. */
 export function canonicalJobUrl(value: string) {
   try {
     const u = new URL(value);
+    u.hostname = u.hostname.toLowerCase();
     for (const k of [...u.searchParams.keys()])
       if (k.startsWith("utm_") || ["source", "ref", "referrer"].includes(k))
         u.searchParams.delete(k);
+    const ghJid = u.searchParams.get("gh_jid");
+    const ghBoard = u.hostname.match(
+      /^(?:boards|job-boards|boards-api)(?:\.[a-z]{2})?\.greenhouse\.io$/,
+    );
+    if (ghBoard) {
+      u.hostname = "job-boards.greenhouse.io";
+      u.pathname = u.pathname.replace(/^\/embed\/job_app$/, "");
+      const m = u.pathname.match(/^\/([^/]+)\/jobs\/(\d+)/);
+      if (m) {
+        u.pathname = `/${m[1]}/jobs/${m[2]}`;
+        u.search = "";
+      }
+    }
+    if (ghJid && !ghBoard) {
+      // Employer-hosted embed: the numeric id is the posting identity.
+      u.search = "";
+      u.searchParams.set("gh_jid", ghJid);
+    }
     u.searchParams.sort();
     u.pathname = u.pathname.replace(/\/$/, "");
+    u.hash = "";
     return u.toString();
   } catch {
     return value;
