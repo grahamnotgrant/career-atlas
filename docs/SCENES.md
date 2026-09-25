@@ -1,6 +1,6 @@
 # Location scenes
 
-The background library contains Overview, Remote and 16 cities: New York, Los Angeles, San Diego, Chicago, Miami, Seattle, Dallas, Denver, San Francisco, Austin, Boston, Atlanta, London, Toronto, Paris and Sydney.
+The background library contains Overview, Remote and 64 cities. Sixteen have hand-drawn landmarks (New York, Los Angeles, San Diego, Chicago, Miami, Seattle, Dallas, Denver, San Francisco, Austin, Boston, Atlanta, London, Toronto, Paris and Sydney); the rest use a generic skyline seeded from the city id, as does any city added at runtime with the `city` career action (see `CAREER-CONTROL.md`).
 
 ## Selection
 
