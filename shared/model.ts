@@ -1,4 +1,5 @@
 import type { CareerState } from "./career";
+import type { WorkspaceState } from "./workspace";
 import { isScene, sceneCatalog } from "./locations";
 import { z } from "zod";
 export const stageSchema = z.enum([
@@ -174,6 +175,7 @@ export interface HomeLocation {
 export interface Snapshot {
   workspaceId?: string;
   career: CareerState;
+  workspace?: WorkspaceState;
   homeLocation: HomeLocation;
   applications: Application[];
   view: View;

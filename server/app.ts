@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { ZodError } from "zod";
 import { Store } from "./store";
+import { workspaceCommandSchema } from "../shared/workspace";
 import { SourceWatcher } from "./source-watcher";
 export async function createApp(store: Store, staticRoot = resolve("dist")) {
   const watcher = new SourceWatcher(store);
@@ -88,6 +89,25 @@ export async function createApp(store: Store, staticRoot = resolve("dist")) {
       return { module: null };
     }
   });
+  app.get("/api/workspace", () => store.workspace.snapshot());
+  app.get("/api/workspace/capabilities", () => ({
+    protocolVersion: 1,
+    actions: workspaceCommandSchema.shape.action.options,
+    managedPreviewMedia: ["application/pdf", "text/plain"],
+    delivery: "poll-on-resume",
+    submissionAuthority: false,
+  }));
+  app.get<{ Querystring: { after?: string; limit?: string } }>(
+    "/api/workspace/history",
+    (req) =>
+      store.workspace.history(
+        Number(req.query.after ?? 0),
+        Number(req.query.limit ?? 100),
+      ),
+  );
+  app.post("/api/workspace/commands", (req) =>
+    store.workspace.command(req.body),
+  );
   app.get("/api/career", () => store.career.snapshot());
   app.post("/api/career/commands", (req) => store.career.command(req.body));
   app.get<{ Params: { id: string } }>(
@@ -129,7 +149,7 @@ export async function createApp(store: Store, staticRoot = resolve("dist")) {
       for (const stream of streams)
         stream.write(`event: sync\ndata: ${sync}\n\n`);
     }
-    const next = `${store.meta("generation", "0")}:${store.getView().revision}:${store.meta("homeLocation", "")}:${store.career.revision()}`;
+    const next = `${store.meta("generation", "0")}:${store.getView().revision}:${store.meta("homeLocation", "")}:${store.career.revision()}:${store.workspace.revision()}:${JSON.stringify(store.workspace.exportHealth())}`;
     if (next !== stamp) {
       stamp = next;
       const data = `event: snapshot\ndata: ${JSON.stringify(store.snapshot())}\n\n`;

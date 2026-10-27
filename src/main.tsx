@@ -12,6 +12,8 @@ import { JourneyScene } from "./JourneyScene";
 import { Scene } from "./Scene";
 import { Popup } from "./Popup";
 import { CareerPanel } from "./CareerPanel";
+import { WorkspacePanel } from "./WorkspacePanel";
+import { useNow } from "./useNow";
 import {
   cleanDisplay,
   shortLocation,
@@ -41,11 +43,35 @@ function App() {
     connected,
     command,
     careerCommand,
+    workspaceCommand,
+    pendingWorkspaceCommand,
+    retryPendingWorkspaceCommand,
     newIds,
     pendingArrivalIds,
     playArrivals,
     pauseArrivals,
   } = useWorkspace();
+  const now = useNow(snapshot?.career.claims.map((c) => c.expiresAt) ?? []);
+  const [surface, setSurface] = useState<"work" | "journey">(() =>
+    new URLSearchParams(location.search).get("view") === "journey"
+      ? "journey"
+      : "work",
+  );
+  const chooseSurface = (next: "work" | "journey") => {
+    setSurface(next);
+    const url = new URL(location.href);
+    url.searchParams.set("view", next);
+    history.replaceState(null, "", url);
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(
+        next === "journey" ? "#scene-workspace" : ".workspace-screen",
+      );
+      if (target) {
+        target.tabIndex = -1;
+        target.focus();
+      }
+    });
+  };
   const [careerTab, setCareerTab] = useState<
     "queue" | "roles" | "records" | "analysis" | null
   >(null);
@@ -209,12 +235,13 @@ function App() {
     );
     for (const target of targets) observer.observe(target);
     return () => observer.disconnect();
-  }, [Boolean(snapshot), v?.theme]);
+  }, [Boolean(snapshot), v?.theme, surface]);
   const arrivalEligibleKey = matches
     .filter((a) => a.status === "pending")
     .map((a) => a.id)
     .join("|");
   const canPlayArrivals =
+    surface === "journey" &&
     visible &&
     arrivalAreaVisible &&
     !!v?.motion &&
@@ -297,7 +324,7 @@ function App() {
     : [];
   digestPending.current = digestParts.length > 0;
   const liveClaims = snapshot.career.claims.filter(
-    (c) => Date.parse(c.expiresAt) > Date.now(),
+    (c) => Date.parse(c.expiresAt) > now,
   );
   const uncertain = snapshot.career.opportunities.filter(
     (o) => o.lifecycle === "uncertain",
@@ -333,7 +360,32 @@ function App() {
       data-theme={v.theme}
       data-revision={v.revision}
     >
-      <main id="scene-workspace" ref={mainRef}>
+      <div className="workspace-surface" hidden={surface !== "work"}>
+        <WorkspacePanel
+          key={snapshot.workspaceId}
+          snapshot={snapshot}
+          connected={connected}
+          workspaceCommand={(action, payload) =>
+            workspaceCommand(action, payload, snapshot.workspace?.revision)
+          }
+          pendingWorkspaceCommand={pendingWorkspaceCommand}
+          retryPendingWorkspaceCommand={retryPendingWorkspaceCommand}
+          careerCommand={(action, payload) =>
+            careerCommand(action, payload, snapshot.career.revision)
+          }
+          onNavigate={(tab) => {
+            if (tab === "journey") chooseSurface("journey");
+            else setCareerTab(tab);
+          }}
+        />
+      </div>
+      {surface === "work" && error && (
+        <div className="error-toast" role="alert">
+          {error}
+          <button onClick={clearError}>Dismiss</button>
+        </div>
+      )}
+      <main id="scene-workspace" ref={mainRef} hidden={surface !== "journey"}>
         <header className="scene-header">
           <div className="heading">
             <span className="wordmark">
@@ -352,6 +404,12 @@ function App() {
             <kbd>⌘ K</kbd>
           </button>
           <div className="top-controls">
+            <button
+              className="quiet-button"
+              onClick={() => chooseSurface("work")}
+            >
+              Work
+            </button>
             <button
               className="quiet-button"
               onClick={() => setCareerTab("roles")}
@@ -482,7 +540,7 @@ function App() {
               )}
               <span>
                 {asOf
-                  ? `Evidence through ${formatDate(asOf)}`
+                  ? `Latest record ${formatDate(asOf)}`
                   : "No imported records"}
               </span>
             </div>
@@ -567,6 +625,7 @@ function App() {
           }}
           onRole={(id) => {
             setCareerTab(null);
+            chooseSurface("journey");
             void command("role", { id });
           }}
         />

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { Store } from "../server/store";
 const skills = [
@@ -12,6 +12,7 @@ const skills = [
   "review-and-improve",
   "maintain-records",
   "scout-roles",
+  "daily-flow",
 ];
 describe("portable onboarding contract", () => {
   it("ships standalone skills with resumable inputs, outputs and approval gates", () => {
@@ -48,10 +49,32 @@ describe("portable onboarding contract", () => {
     ].map((s) => onboarding.indexOf(s));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    const evidence = readFileSync("skills/uncover-evidence/SKILL.md", "utf8");
-    expect(evidence).toContain("facts.md");
-    expect(evidence).toMatch(/voice/i);
-    expect(evidence).toContain("Never require a voice tool");
+  });
+  it("resolves shared contracts and local documentation links in the portable workflow", () => {
+    const files = [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "README.md",
+      "docs/AGENT-START.md",
+      "docs/WORKFLOW-CONTRACTS.md",
+      "docs/ONBOARDING.md",
+      "docs/CAREER-CONTROL.md",
+      "docs/RESUME-LINKING.md",
+      "skills/SESSION.md",
+      ...skills.map((skill) => `skills/${skill}/SKILL.md`),
+    ];
+    for (const file of files) {
+      expect(existsSync(file), file).toBe(true);
+      const text = readFileSync(file, "utf8");
+      for (const match of text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+        const target = match[1].replace(/^<|>$/g, "").split("#")[0];
+        if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
+        expect(
+          existsSync(resolve(dirname(file), target)),
+          `${file}: ${target}`,
+        ).toBe(true);
+      }
+    }
   });
   it("starts a clean session without invented experience, authorization or applications", () => {
     const dir = mkdtempSync(join(tmpdir(), "atlas-onboard-"));

@@ -22,6 +22,8 @@ Exports have unique filenames, so an open workbook cannot block updates to a new
 
 The exporter reads canonical tables inside a SQLite read transaction. The workbook and JSON derive from that same snapshot. A pending export may lag a newer mutation; compare its revisions with the current database before analysis. Keep exports only as long as needed; the app does not delete your prior exports.
 
+After maintenance or a daily run, read back changed canonical records, then check `exports/workbook-status.json` for a successful export whose data `generation` and `career_state` revision include those writes. Record the revisions and path verified in the private session; view revisions need not match. Treat a receipt-backed submission and its workbook export as separate results. An export failure does not undo employer confirmation. See `WORKFLOW-CONTRACTS.md` for permission and material rules.
+
 ## Backups and restore
 
 Backups use SQLite `VACUUM INTO` for a consistent database snapshot while the app is running, then copy hash-verified, content-addressed evidence and other local user files. Pause agents editing mutable session/template files for a consistent copy of those files. The manifest contains SHA-256 hashes. Runtime tokens, database WAL/SHM files, logs, earlier backups and exports are omitted.
@@ -48,3 +50,9 @@ The update command requires a clean checkout and a locally fetched Git reference
 ## Dependency note
 
 Excel export uses [ExcelJS](https://github.com/exceljs/exceljs). The scoped `uuid` override pins its compatible CommonJS dependency to 11.1.1 to address the buffer-bounds advisory in older UUID releases. Export tests read back the produced XLSX and verify literal cell types.
+
+## Workspace records and upgrades
+
+Schema version 5 adds durable agent runs, questions, steering, source checkpoints, facts, materials and audit/command history. Opening an older supported database creates a consistent `backups/before-v5-*.sqlite` before the additive migration. Existing career approvals, application identities and grants are retained. Older binaries refuse a newer database; use a pre-upgrade backup in a separate restored directory when rolling back.
+
+Full JSON and Excel projections include workspace tables and `workspace_state` revision. The Work screen compares generation, career revision and workspace revision to show export health. Backup validates every managed file required by application evidence or verified workspace materials; restore validates these references as well as the backup manifest. Recovery-needed material hashes and external source paths may intentionally lack local bytes and must keep their coverage limitations.

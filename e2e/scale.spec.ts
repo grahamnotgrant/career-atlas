@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store";
@@ -76,13 +76,75 @@ test("2000 applications and 20000 events keep the visual bounded and all records
     dir,
   );
   const importMs = performance.now() - started;
+  let workspaceSequence = 0;
+  const workspaceChange = (
+    action: string,
+    payload: Record<string, unknown>,
+    actor = "scale-agent",
+    channel = "agent",
+  ) =>
+    store.workspace.command({
+      id: `scale-workspace-${++workspaceSequence}`,
+      expectedRevision: store.workspace.revision(),
+      actor,
+      channel,
+      action,
+      payload,
+    });
+  workspaceChange("run", {
+    run: {
+      id: "scale-run",
+      owner: "scale-agent",
+      label: "Reviewing experience",
+      operation: "uncover-evidence",
+      status: "waiting",
+      phase: "Portfolio and coursework review",
+    },
+  });
+  for (let i = 0; i < 100; i++)
+    workspaceChange("fact", {
+      fact: {
+        id: `scale-fact-${i}`,
+        label: `Project evidence ${i}`,
+        observation: "A fictional portfolio, coursework or process brief.",
+        ownership: "unresolved",
+        support: [
+          { label: "Fictional source", reference: `example:project-${i}` },
+        ],
+      },
+    });
+  const snapshotBytes = Buffer.byteLength(JSON.stringify(store.snapshot()));
   const server = await createApp(store);
   const url = await server.listen({ host: "127.0.0.1", port: 0 });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   try {
-    const loadStart = performance.now();
+    const workspaceLoadStart = performance.now();
     await page.goto(url);
+    await expect(
+      page.getByRole("heading", { name: "Your search", exact: true }),
+    ).toBeVisible({ timeout: 15000 });
+    const workspaceLoadMs = performance.now() - workspaceLoadStart;
+    expect(workspaceLoadMs).toBeLessThan(12000);
+    const updateStart = performance.now();
+    workspaceChange(
+      "steer",
+      {
+        instruction: "Review coursework and portfolio evidence before drafting",
+      },
+      "person",
+      "app",
+    );
+    await expect(
+      page.getByText(
+        "Review coursework and portfolio evidence before drafting",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    const workspaceUpdateMs = performance.now() - updateStart;
+    expect(workspaceUpdateMs).toBeLessThan(4000);
+    const loadStart = performance.now();
+    await page.goto(`${url}/?view=journey`);
     await expect(
       page.getByText("2000 confirmed applications", { exact: true }),
     ).toBeVisible({ timeout: 15000 });
@@ -114,6 +176,24 @@ test("2000 applications and 20000 events keep the visual bounded and all records
       .fill("AI Implementation 1999");
     await expect(page.locator(".record-row")).toHaveCount(1);
     expect(errors).toEqual([]);
+    writeFileSync(
+      testInfo.outputPath("measurements.json"),
+      JSON.stringify(
+        {
+          records: 2000,
+          events: 20000,
+          facts: 100,
+          importMs,
+          loadMs,
+          searchMs,
+          workspaceLoadMs,
+          workspaceUpdateMs,
+          snapshotBytes,
+        },
+        null,
+        2,
+      ),
+    );
     await testInfo.attach("scale-measurements", {
       body: JSON.stringify(
         {
@@ -122,6 +202,9 @@ test("2000 applications and 20000 events keep the visual bounded and all records
           importMs,
           loadMs,
           searchMs,
+          workspaceLoadMs,
+          workspaceUpdateMs,
+          snapshotBytes,
           visibleDots: await page.locator(".application-node").count(),
         },
         null,

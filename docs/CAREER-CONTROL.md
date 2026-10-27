@@ -2,6 +2,8 @@
 
 Use the same private `CAREER_FLOW_DATA` and `CAREER_FLOW_URL` as the server. View commands and record commands have separate revisions.
 
+`WORKFLOW-CONTRACTS.md` defines the permission, evidence and material rules around these commands. A successful command validates its supported fields; it does not prove source identity, user approval or archive completeness.
+
 ```sh
 npm run career -- state
 npm run career -- settings @/absolute/private/settings-payload.json
@@ -30,7 +32,7 @@ The career CLI reads the token without printing it. For mutations it reads the c
 
 A success returns `{revision, result}`. The claim result contains `opportunityId`, `owner`, `fence`, `expiresAt` and `grantId`. Save those values. Identical command retries return the original result; changed content under the same ID is rejected. HTTP 409 means a revision or workflow conflict. HTTP 400 means invalid input. Read `shared/career.ts` and `server/career.ts` for exact validation rules.
 
-All requests require the local bearer token or the browser's same-origin session. The token is a local credential, not an application authorization grant. Do not paste it in chat or expose the endpoint through a tunnel.
+All requests require the local bearer token or the browser's same-origin session. The token is a local credential, not an application authorization grant. Do not paste it in chat or a URL, or expose the endpoint through a tunnel.
 
 ## Actions
 
@@ -58,7 +60,9 @@ All requests require the local bearer token or the browser's same-origin session
 | `city`             | `{city: {id, label, aliases, lon, lat, tint?, landmark?, addedBy?, addedAt}}` or `{id, remove: true}`         | Add a city the scene catalog lacks. Aliases are whole words matched case-insensitively in locations; coordinates place the globe marker; the scene draws with the generic skyline. Built-in ids are refused.                                                                                                                                  |
 | `decide`           | `{opportunityId, decision: approved\|hold\|skipped, note?}`                                                   | The user's own call from the Queue: `hold` stops agents on that role until released, `skipped` sets it aside, `approved` releases a hold. Appends user provenance.                                                                                                                                                                            |
 
-A lease lasts 30–900 seconds (300 default). Renew before expiry during preparation. If it expires, stop external actions and re-read the role. A new claim increments the fence, invalidating older agents. `begin-submit` reserves an attempt against the grant cap; an uncertain attempt cannot be claimed again without reconciliation. A expired claim after an external submission does not justify retrying the employer form: preserve the receipt and reconcile through `confirm`.
+A lease lasts 30–900 seconds (300 default). Renew before expiry during preparation and before `begin-submit` when needed. `renew` refuses after a submission attempt; `result` and `release` also refuse an expired lease. If an action outlasts the lease, preserve outcome evidence and the actual canonical `attempted` lifecycle privately, adding source `annotate` provenance where supported. A receipt can establish `confirm` after expiry; `reconcile` requires evidence of non-submission. Absence of a receipt alone is not that evidence. Follow the shared contract's interrupted-attempt branch rather than retrying invalid lease commands or the employer form.
+
+An expired lease stops further external actions on that attempt. A new claim increments the fence, invalidating older agents, but attempted/uncertain records require reconciliation before another claim. `begin-submit` reserves an attempt against the grant cap. Continue unrelated eligible work while the outcome is being resolved.
 
 ## Cities the catalog lacks
 
@@ -82,9 +86,13 @@ The Queue and Companies views show `used of max in N days` and the next eligible
 
 ## Preserving materials
 
-`prepare` requires full SHA-256 hashes whose exact bytes exist at `DATA/artifacts/<sha256>`. Preserve material files before preparing. Do not use filenames or partial hashes as proof. Hash and copy a local user-approved artifact with a small filesystem script; keep source documents outside the checkout. Record its source path, approved template and wording checks in the private session.
+`prepare` requires full SHA-256 hashes whose exact bytes exist at `DATA/artifacts/<sha256>`. Preserve material files before preparing. Do not use filenames or partial hashes as proof. Hash and copy the approved material with a small filesystem script; keep source documents outside the checkout. Record its source path, approved template and wording checks in the private session.
 
-`confirm.application` uses the complete `Application` schema in `shared/model.ts`. Company and original title must match the opportunity. Its submission event must reference nonempty receipt evidence. Set unknown submission dates to `null`. Evidence may reference already managed `sha256` artifacts; the API rejects arbitrary `file` paths. The manifest importer can stage files, but importing a confirmed application also creates its canonical confirmed opportunity, so reconcile identity before combining import and confirm routes.
+Before `begin-submit`, compare the final employer form with the preserved inventory: exact question text and answers, omitted or unanswered questions, every upload's type, label and full hash, any supplementary files, posting identity and the intended receipt match. Recheck the form after uploads or autofill change it. Preserve manual-paste text with its source and final version. Keep the final inventory and approval/source references in a private artifact; `answers` is currently a free string (up to 20,000 characters), and `materialHashes` is an untyped hash array. The career preparation fields do not enforce this inventory. Publish its typed material/question records through [WORKSPACE-CONTROL.md](WORKSPACE-CONTROL.md), retaining the private final archive and exact submission checks.
+
+Canonical evidence supports PDF and plain-text media. The resume proposer scans PDFs only. Keep original DOCX files and their hashes in the private material archive when used, and retain source and conversion limitations for any PDF or text evidence derived from them. A derived file is not proof of the original bytes uploaded. Preserve the detailed private source registry and evidence checks, and publish relevant checkpoints/facts to the Work screen through [WORKSPACE-CONTROL.md](WORKSPACE-CONTROL.md). Source access and external wording approval remain separate.
+
+`confirm.application` uses the complete `Application` schema in `shared/model.ts`. Company and original title must match the opportunity. Its submission event must reference nonempty receipt evidence. Set unknown submission dates to `null`. Evidence may reference already managed `sha256` artifacts; the API rejects arbitrary `file` paths. The manifest importer can stage files, but importing a confirmed application also creates its canonical confirmed opportunity, so reconcile identity before combining import and confirm routes. A receipt-backed confirmed outcome remains confirmed even when an old resume or answer archive is incomplete; record the gap separately.
 
 Provenance kinds are `employer`, `user`, `hypothesis` and `source`. Do not record an agent explanation as employer feedback. Approval notes must quote or summarize a real user instruction with the scope and date, not a suggested approval.
 
@@ -100,7 +108,7 @@ npm run scout -- probe "<Company>" "<careers URL>" ...
 npm run scout -- discover --hn 2 --names /absolute/private/names.txt
 ```
 
-Six board types are read directly: Ashby, Greenhouse, Lever, Workable, SmartRecruiters and Workday (the enterprise tier; searched by role keywords because a tenant lists thousands of jobs). `probe` takes company names or careers URLs, tries every board type and adds the ones that answer with postings. `discover` feeds `probe` from the last N monthly Hacker News hiring threads and from any list of company names, one per line, such as a Fortune 1000 or a VC portfolio. The board list, checkpoint and candidate files live under private `scout/`. `store` posts an `opportunities` command with `discovered` lifecycle and employer provenance; it rejects URLs already stored and never submits. See `skills/scout-roles/SKILL.md`.
+Six board types are read directly: Ashby, Greenhouse, Lever, Workable, SmartRecruiters and Workday (the enterprise tier; searched by role keywords because a tenant lists thousands of jobs). `probe` takes company names or careers URLs, tries every board type and adds the ones that answer with postings. `discover` feeds `probe` from the last N monthly Hacker News hiring threads and from any list of company names, one per line, such as a Fortune 1000 or a VC portfolio. The board list, global poll checkpoint and candidate files live under private `scout/`. There is no per-board checkpoint enforcement; preserve board-specific failures and retry coverage in the private session. `store` posts an `opportunities` command with `discovered` lifecycle and employer provenance; it rejects URLs already stored and never submits. See `skills/scout-roles/SKILL.md`.
 
 ## View and exports
 
@@ -124,4 +132,4 @@ A rejection or a closed role is recorded against the confirmed application, not 
 npm run decisions -- apply /private/decisions.json
 ```
 
-Each entry names the application, the decision (`rejected` or `closed`), the date of the employer's message, a `source` (for example a mail thread reference) and the message `text`. The message is stored as `feedback` evidence, a `decision` event cites it, and the status changes. An application that is already decided is skipped unless the entry sets `force`. Silence is never a decision; after 30 days it is shown as stale, which is a different thing.
+Each entry names the application, the decision (`rejected` or `closed`), the date of the employer's message, a `source` (for example a mail thread reference) and the message `text`. The message is stored as `feedback` evidence, a `decision` event cites it, and the status changes. Read back the affected record and verify the export separately. An application that is already decided is skipped unless the entry sets `force`; a conflicting or replacement decision requires reconciliation before using it. Silence is never a decision; after 30 days it is shown as stale, which is a different thing.

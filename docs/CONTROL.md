@@ -1,6 +1,6 @@
 # Local control contract v1
 
-Bind to loopback. A browser opens `/api/session` to receive an HttpOnly, SameSite=Strict cookie. Local clients read `control-token` from the private data directory and send `Authorization: Bearer <token>`. Do not expose this service through a tunnel or reverse proxy.
+Bind to loopback. A browser opens `/api/session` to receive an HttpOnly, SameSite=Strict cookie. Local clients read `control-token` from the private data directory and send `Authorization: Bearer <token>`. Never put the token in a URL. Do not expose this service through a tunnel or reverse proxy.
 
 - `GET /api/health`: public runtime health, no private records.
 - `GET /api/snapshot`: applications, view state, generation, coverage, `canGoBack` and source `sync` status.
@@ -26,6 +26,8 @@ A successful command returns `{view, generation, canGoBack}`. Repeating the iden
 Outcome ids are `pending`, `noreply`, `rejected` and `closed`; `noreply` is derived from 30 days of silence and never stored. `close-silent` records the user's own decision to close pending applications silent for 30 days or more, dated that day, one decision event and one user note per application; it refuses anything younger or not pending. A `selection` focuses a stage (`applied`, `recruiter`, `hiring`, `case`, `offer`) or an outcome (`pending`, `rejected`, `closed`); it scopes the outcome counts, draws ribbons to the places holding those applications and persists across refresh. Location and role changes clear it. Selecting an application always follows its location. Legacy `locked` arguments are accepted for compatibility but no longer lock the scene. A filter clears selection. Reset clears filters and selection while preserving the motion preference. Acknowledgment proves server state; rendered appearance requires browser verification.
 
 Imports run through the local CLI, not an arbitrary-path HTTP endpoint. Keep demo and private imports in separate directories. All clients share one view in this milestone; separate viewer sessions are a future extension.
+
+For a foreground start or daily run, resolve the current server URL, open it with the available browser tool and verify the rendered app. An API acknowledgment proves server state only. If browser access is unavailable, preserve that verification blocker. Background maintenance preserves the shared view: do not reset, filter, select or navigate it merely to perform record work. Follow `WORKFLOW-CONTRACTS.md` for the shared workflow rules.
 
 Document selection requires evidence belonging to the selected application. Back restores persisted navigation history. Close dismisses the popup without opening a browser tab.
 

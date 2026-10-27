@@ -1,6 +1,6 @@
 # Agent shortcuts
 
-Setup can install six project shortcuts:
+Setup can install seven project shortcuts:
 
 ```sh
 npm run atlas -- setup --commands=auto
@@ -10,16 +10,19 @@ Auto detection checks the current agent environment and executables on PATH. For
 
 Open this repository in your agent and start with **career-start**: `$career-start` in Codex, `/career-start` in Claude Code.
 
-| Shortcut      | Purpose                                                     |
-| ------------- | ----------------------------------------------------------- |
-| career-start  | Onboard or resume                                           |
-| career-sync   | Check sources, reconcile records, verify spreadsheet export |
-| career-change | Change preferences, correct records, request app changes    |
-| career-apply  | Continue applications within existing authorization         |
-| career-review | Analyze outcomes and identify improvements                  |
-| career-scout  | Poll employer boards, store and triage new roles            |
+| Shortcut      | Purpose                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------- |
+| career-start  | Open the workspace and resume saved work or unfinished onboarding                       |
+| career-sync   | Sync authorized sources, refresh work evidence and verify export                        |
+| career-change | Change preferences, correct records, request app changes                                |
+| career-apply  | Continue applications within existing authorization                                     |
+| career-review | Analyze outcomes and identify improvements                                              |
+| career-scout  | Poll employer boards, store and triage new roles                                        |
+| career-daily  | Coordinate sync, evidence/questions, queue work and applications within existing grants |
 
-The shortcuts read [AGENT-START.md](AGENT-START.md) and existing workflow skills. They add no account access or submission permission. Sync runs when invoked; it does not create a background schedule.
+The shortcuts read [AGENT-START.md](AGENT-START.md), [WORKFLOW-CONTRACTS.md](WORKFLOW-CONTRACTS.md) and the selected shared workflow. Common startup runs once per run, including daily child phases. Career-daily follows [daily flow](../skills/daily-flow/SKILL.md); it refreshes authorized work evidence, asks focused questions about missing ownership/results, and submits eligible applications only through existing valid grants and approved claims. They add no account access or submission permission. A blocked role or pending new claim does not stop independent authorized work. These workflows run when invoked and do not create a background schedule.
+
+For a foreground start/daily request, the agent opens the configured app and verifies it loaded. Background work preserves the user's selection. The journey uses one shared view. The Work screen exposes durable questions, instructions, evidence/wording review and source coverage through [WORKSPACE-CONTROL.md](WORKSPACE-CONTROL.md); original files and detailed notes remain private.
 
 ## Manage installation
 

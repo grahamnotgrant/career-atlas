@@ -21,6 +21,7 @@ import {
 } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import ExcelJS from "exceljs";
+import { workspaceRecordsSchema } from "../shared/workspace";
 
 const sha = (data: Buffer | string) =>
   createHash("sha256").update(data).digest("hex");
@@ -58,7 +59,7 @@ export function exportSnapshot(dir: string): ExportSnapshot {
     for (const row of tables.metadata ?? [])
       if (/revision|generation/.test(String(row.key)))
         revisions[String(row.key)] = row.value;
-    for (const name of ["career_state", "view_state"])
+    for (const name of ["career_state", "view_state", "workspace_state"])
       for (const row of tables[name] ?? []) {
         const body = typeof row.body === "string" ? JSON.parse(row.body) : row;
         if (row.revision !== undefined || body.revision !== undefined)
@@ -97,6 +98,23 @@ function safePath(root: string, path: string) {
       throw new Error("Symlinks are not allowed.");
   }
   return target;
+}
+function requiredArtifacts(snapshot: ExportSnapshot) {
+  const required = new Set(
+    (snapshot.tables.evidence ?? [])
+      .map((row) => row.artifact)
+      .filter((value): value is string => typeof value === "string"),
+  );
+  for (const row of snapshot.tables.workspace_state ?? []) {
+    const records = workspaceRecordsSchema.parse(JSON.parse(String(row.body)));
+    for (const material of records.materials)
+      if (material.coverage === "verified" && material.sha256)
+        required.add(material.sha256);
+  }
+  for (const digest of required)
+    if (!/^[a-f0-9]{64}$/.test(digest))
+      throw new Error("Invalid managed artifact name.");
+  return required;
 }
 function writeNew(path: string, data: Buffer | string) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -155,14 +173,7 @@ export function backupData(source: string, target: string) {
     chmodSync(join(temp, "career.sqlite"), 0o600);
     const snapshot = exportSnapshot(temp);
     // Immutable content-addressed evidence is copied after the SQLite snapshot.
-    const required = new Set(
-      (snapshot.tables.evidence ?? [])
-        .map((row) => row.artifact)
-        .filter((v): v is string => typeof v === "string"),
-    );
-    for (const artifact of required) {
-      if (!/^[a-f0-9]{64}$/.test(artifact))
-        throw new Error("Invalid evidence artifact name.");
+    for (const artifact of requiredArtifacts(snapshot)) {
       const data = readFileSync(safePath(source, `artifacts/${artifact}`));
       if (sha(data) !== artifact) throw new Error("Evidence hash mismatch.");
       writeNew(join(temp, "artifacts", artifact), data);
@@ -262,6 +273,11 @@ export function restoreData(backup: string, target: string) {
         throw new Error("Database foreign key check failed.");
     } finally {
       db.close();
+    }
+    for (const digest of requiredArtifacts(exportSnapshot(temp))) {
+      const data = readFileSync(safePath(temp, `artifacts/${digest}`));
+      if (sha(data) !== digest)
+        throw new Error("Managed artifact hash mismatch.");
     }
     renameSync(temp, dest);
     return { path: dest, revisions: manifest.revisions };
@@ -533,6 +549,7 @@ export function watchWorkbook(dir: string, intervalMs = 5000) {
                   ![
                     "commands",
                     "career_commands",
+                    "workspace_commands",
                     "view_state",
                     "view_history",
                   ].includes(name),

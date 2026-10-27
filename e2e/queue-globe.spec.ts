@@ -29,7 +29,7 @@ async function tab(page: Page, name: string) {
     .click();
 }
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?view=journey");
   await expect(
     page.getByRole("button", { name: "Outcomes", exact: true }),
   ).toBeVisible();

@@ -1,11 +1,53 @@
 import { registerCities } from "../shared/locations";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrivalQueue } from "./arrivalQueue";
+import { WorkspaceOutbox } from "./workspaceOutbox";
+import {
+  workspaceCommandSchema,
+  type WorkspaceCommand,
+} from "../shared/workspace";
 import type { Command, Snapshot } from "../shared/model";
+export interface SnapshotVersion {
+  workspaceId?: string;
+  generation: number;
+  view: { revision: number };
+  career: { revision: number };
+  workspace?: { revision: number };
+}
+/** Shared acceptance gate for stream events and command readbacks. */
+export function shouldAcceptSnapshot(
+  previous: SnapshotVersion | null,
+  next: SnapshotVersion,
+  requestedFrom?: SnapshotVersion | null,
+) {
+  // An HTTP request issued for an earlier workspace cannot replace the
+  // stream's newly loaded workspace, even if the old response arrives later.
+  if (
+    previous &&
+    requestedFrom &&
+    previous.workspaceId !== requestedFrom.workspaceId
+  )
+    return false;
+  return (
+    !previous ||
+    previous.workspaceId !== next.workspaceId ||
+    (next.generation >= previous.generation &&
+      next.view.revision >= previous.view.revision &&
+      next.career.revision >= previous.career.revision &&
+      (!previous.workspace || !!next.workspace) &&
+      (next.workspace?.revision ?? 0) >= (previous.workspace?.revision ?? 0))
+  );
+}
 async function request(path: string, options?: RequestInit) {
-  const response = await fetch(path, options);
+  const response = await fetch(path, {
+    ...options,
+    signal: options?.signal ?? AbortSignal.timeout(15000),
+  });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? "Local connection failed.");
+  if (!response.ok)
+    throw Object.assign(new Error(data.error ?? "Local connection failed."), {
+      status: response.status,
+    });
   return data;
 }
 /** A single initial payload arrives over SSE; reconnects use the same stream. */
@@ -83,11 +125,14 @@ export function useWorkspace() {
     [error, setError] = useState(""),
     [connected, setConnected] = useState(false),
     [busy, setBusy] = useState(false),
+    [pendingWorkspaceCommand, setPendingWorkspaceCommand] =
+      useState<WorkspaceCommand | null>(null),
     [arrivals, setArrivals] = useState({
       pendingArrivalIds: [] as string[],
       newIds: [] as string[],
     });
   const arrivalQueue = useRef<ArrivalQueue | null>(null);
+  const workspaceOutbox = useRef<WorkspaceOutbox | null>(null);
   const arrivalWorkspace = useRef<string | undefined>(undefined);
   const playArrivals = useCallback(
     (ids: string[]) => arrivalQueue.current?.play(ids),
@@ -96,15 +141,9 @@ export function useWorkspace() {
   const pauseArrivals = useCallback(() => arrivalQueue.current?.pause(), []);
   const current = useRef<Snapshot | null>(null),
     queue = useRef(Promise.resolve());
-  function accept(next: Snapshot) {
+  function accept(next: Snapshot, requestedFrom?: Snapshot | null) {
     const previous = current.current;
-    if (
-      previous &&
-      previous.workspaceId === next.workspaceId &&
-      (next.generation < previous.generation ||
-        next.view.revision < previous.view.revision)
-    )
-      return;
+    if (!shouldAcceptSnapshot(previous, next, requestedFrom)) return;
     if (
       !arrivalQueue.current ||
       arrivalWorkspace.current !== next.workspaceId
@@ -117,6 +156,16 @@ export function useWorkspace() {
         /* Private browser storage can be unavailable. */
       }
       arrivalWorkspace.current = next.workspaceId;
+      workspaceOutbox.current =
+        next.workspaceId && storage
+          ? new WorkspaceOutbox(next.workspaceId, storage)
+          : null;
+      try {
+        setPendingWorkspaceCommand(workspaceOutbox.current?.pending ?? null);
+      } catch (e) {
+        setPendingWorkspaceCommand(null);
+        setError((e as Error).message);
+      }
       arrivalQueue.current = new ArrivalQueue(
         next.workspaceId ?? "session",
         storage,
@@ -135,11 +184,27 @@ export function useWorkspace() {
       if (document.hidden) arrivalQueue.current?.pause();
     };
     const leave = () => arrivalQueue.current?.pause();
+    const storageChanged = (event: StorageEvent) => {
+      if (
+        !event.key ||
+        event.key.startsWith(
+          `career-atlas.workspace-command.v1.${current.current?.workspaceId}.`,
+        )
+      ) {
+        try {
+          setPendingWorkspaceCommand(workspaceOutbox.current?.pending ?? null);
+        } catch (e) {
+          setError((e as Error).message);
+        }
+      }
+    };
     document.addEventListener("visibilitychange", hide);
     window.addEventListener("pagehide", leave);
+    window.addEventListener("storage", storageChanged);
     return () => {
       document.removeEventListener("visibilitychange", hide);
       window.removeEventListener("pagehide", leave);
+      window.removeEventListener("storage", storageChanged);
     };
   }, []);
   useEffect(() => {
@@ -172,16 +237,19 @@ export function useWorkspace() {
       .querySelector<HTMLScriptElement>('script[type="module"][src]')
       ?.getAttribute("src");
     if (!loaded || !loaded.startsWith("/assets/")) return;
+    const editing = () =>
+      document.hidden ||
+      !!document.querySelector(
+        '[role="dialog"], [data-workspace-dirty="true"]',
+      ) ||
+      document.activeElement?.matches(
+        'input, textarea, select, [contenteditable="true"]',
+      );
     const timer = setInterval(() => {
-      if (document.hidden || document.querySelector('[role="dialog"]')) return;
+      if (editing()) return;
       void request("/api/build")
         .then((build) => {
-          if (
-            build.module &&
-            build.module !== loaded &&
-            !document.hidden &&
-            !document.querySelector('[role="dialog"]')
-          )
+          if (build.module && build.module !== loaded && !editing())
             location.reload();
         })
         .catch(() => {});
@@ -209,12 +277,12 @@ export function useWorkspace() {
           }),
         });
         // Commands return view state, not data; always read the current generation.
-        accept(await request("/api/snapshot"));
+        accept(await request("/api/snapshot"), before);
         return result;
       } catch (e) {
         setError((e as Error).message);
         try {
-          accept(await request("/api/snapshot"));
+          accept(await request("/api/snapshot"), before);
         } catch {
           /* Keep the previous valid scene. */
         }
@@ -231,6 +299,7 @@ export function useWorkspace() {
     expectedRevision?: number,
   ) => {
     const run = async () => {
+      const before = current.current;
       setBusy(true);
       setError("");
       try {
@@ -245,7 +314,7 @@ export function useWorkspace() {
             payload,
           }),
         });
-        accept(await request("/api/snapshot"));
+        accept(await request("/api/snapshot"), before);
         return true;
       } catch (e) {
         setError((e as Error).message);
@@ -261,6 +330,129 @@ export function useWorkspace() {
     );
     return next;
   };
+  const deliverWorkspaceCommand = (
+    change: WorkspaceCommand,
+    before: Snapshot,
+    stage: boolean,
+  ) => {
+    const run = async () => {
+      setBusy(true);
+      setError("");
+      let attempted = false;
+      let accepted = false;
+      const outbox = workspaceOutbox.current;
+      try {
+        if (current.current?.workspaceId !== before.workspaceId)
+          throw new Error(
+            "The workspace changed. Review the current workspace before trying again.",
+          );
+        if (!outbox)
+          throw new Error(
+            "This browser cannot preserve changes for safe delivery. Ask your agent to make this change.",
+          );
+        if (stage) outbox.stage(change);
+        setPendingWorkspaceCommand(outbox.pending);
+        attempted = true;
+        const receipt = await request("/api/workspace/commands", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(change),
+        });
+        if (
+          receipt?.revision !== change.expectedRevision + 1 ||
+          !Object.hasOwn(receipt, "result")
+        )
+          throw new Error(
+            "The workspace command acknowledgment could not be verified.",
+          );
+        accepted = true;
+        outbox.resolve(change.id);
+        accept(await request("/api/snapshot"), before);
+        return true;
+      } catch (e) {
+        const status = (e as Error & { status?: number }).status;
+        if (attempted && status && status >= 400 && status < 500) {
+          // Explicit validation/conflict responses roll back server writes.
+          try {
+            outbox?.resolve(change.id);
+          } catch {
+            /* A retry remains safe. */
+          }
+          setError(`The change was not saved. ${(e as Error).message}`);
+        } else if (accepted) {
+          setError(
+            "The change was accepted, but the current view could not be confirmed. Reconnect or retry any pending change.",
+          );
+        } else if (attempted) {
+          setError(
+            "The change has not been confirmed. Retry the pending change; its request ID is preserved.",
+          );
+        } else {
+          setError(`The change was not sent. ${(e as Error).message}`);
+        }
+        try {
+          accept(await request("/api/snapshot"), before);
+        } catch {
+          /* Keep the last valid view and the request journal. */
+        }
+        return accepted;
+      } finally {
+        if (current.current?.workspaceId === before.workspaceId) {
+          try {
+            setPendingWorkspaceCommand(outbox?.pending ?? null);
+          } catch (e) {
+            setError((e as Error).message);
+          }
+        }
+        setBusy(false);
+      }
+    };
+    const next = queue.current.then(run, run);
+    queue.current = next.then(
+      () => {},
+      () => {},
+    );
+    return next;
+  };
+  const workspaceCommand = (
+    action: string,
+    payload: Record<string, unknown> = {},
+    expectedRevision?: number,
+  ): Promise<boolean> => {
+    const before = current.current;
+    if (!before?.workspaceId || !before.workspace) {
+      setError(
+        "The agent workspace is not available yet. Reconnect before making this change.",
+      );
+      return Promise.resolve(false);
+    }
+    const parsed = workspaceCommandSchema.safeParse({
+      id: crypto.randomUUID(),
+      expectedRevision: expectedRevision ?? before.workspace.revision,
+      actor: "person",
+      channel: "app",
+      action,
+      payload,
+    });
+    if (!parsed.success) {
+      setError(
+        "This workspace change could not be prepared. Ask your agent to check it.",
+      );
+      return Promise.resolve(false);
+    }
+    return deliverWorkspaceCommand(parsed.data, before, true);
+  };
+  const retryPendingWorkspaceCommand = (): Promise<boolean> => {
+    try {
+      const pending = workspaceOutbox.current?.pending;
+      const before = current.current;
+      if (pending && before)
+        return deliverWorkspaceCommand(pending, before, false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    return Promise.resolve(false);
+  };
   return {
     snapshot,
     error,
@@ -269,6 +461,9 @@ export function useWorkspace() {
     busy,
     command,
     careerCommand,
+    workspaceCommand,
+    pendingWorkspaceCommand,
+    retryPendingWorkspaceCommand,
     ...arrivals,
     playArrivals,
     pauseArrivals,
