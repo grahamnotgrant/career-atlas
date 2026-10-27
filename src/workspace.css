@@ -124,8 +124,19 @@
 .workspace-next {
   padding: clamp(20px, 3vw, 32px);
   border-radius: 14px;
-  background: #f1eee4;
-  color: #152b3e;
+  background: #10243a;
+  color: var(--work-ink);
+  box-shadow:
+    inset 0 0 0 1px #42618080,
+    0 4px 16px #02081326;
+}
+.workspace-next[data-has-question="false"] {
+  padding: clamp(16px, 2.4vw, 24px);
+  background: #0b192b;
+  box-shadow: inset 0 0 0 1px var(--work-line);
+}
+.workspace-next[data-has-question="false"] h2 {
+  font-size: 20px;
 }
 .workspace-next h2 {
   margin-top: 10px;
@@ -137,11 +148,11 @@
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: #4b6071;
+  color: var(--work-blue);
 }
 .workspace-next p {
   margin-top: 12px;
-  color: #415564;
+  color: var(--work-muted);
   font-size: 15px;
 }
 .workspace-next form {
@@ -172,9 +183,9 @@
 }
 .workspace-next textarea,
 .workspace-next select {
-  background: #fffdf7;
-  color: #152b3e;
-  border-color: #8593a0;
+  background: #091727;
+  color: var(--work-ink);
+  border-color: #66849f;
 }
 .workspace-screen textarea:focus-visible {
   outline: 3px solid #82b2e2;
@@ -188,14 +199,6 @@
 }
 .workspace-screen .workspace-primary:hover {
   background: #bddcf5;
-}
-.workspace-next .workspace-primary {
-  color: #fff;
-  background: #193b57;
-  border-color: #193b57;
-}
-.workspace-next .workspace-primary:hover {
-  background: #2e536e;
 }
 .workspace-form-actions {
   display: flex;
@@ -218,7 +221,7 @@
   overflow-wrap: anywhere;
 }
 .workspace-next a {
-  color: #205272;
+  color: #a5cff4;
 }
 .workspace-section-top {
   display: flex;
@@ -394,7 +397,7 @@
   color: #c2d9ee;
 }
 .workspace-next summary {
-  color: #205272;
+  color: #a5cff4;
 }
 .workspace-screen details > p {
   font-size: 14px;
@@ -491,12 +494,12 @@
 }
 .workspace-next details > p,
 .workspace-next .workspace-rows p {
-  color: #415564;
+  color: var(--work-muted);
 }
 .workspace-next .workspace-question-list button {
-  color: #205272;
+  color: #a5cff4;
   background: transparent;
-  border-color: #aab5bc;
+  border-color: #426180;
 }
 .workspace-next .workspace-question-list button:hover {
   text-decoration: underline;

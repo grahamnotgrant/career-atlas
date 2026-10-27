@@ -9,10 +9,13 @@ CAREER_FLOW_AGENT_ID=daily-agent npm run workspace -- state
 CAREER_FLOW_AGENT_ID=daily-agent npm run workspace -- run @/absolute/private/run.json
 CAREER_FLOW_AGENT_ID=daily-agent npm run workspace -- import-session @/absolute/private/session.json
 CAREER_FLOW_AGENT_ID=person npm run workspace -- steer '{"instruction":"Prioritize portfolio-based roles"}'
+CAREER_FLOW_AGENT_ID=person npm run workspace -- approve-fact '{"id":"portfolio-layout","wording":"I chose the portfolio layout."}' --expected-revision=7
 npm run workspace -- retry /absolute/private/requests/saved-request.json
 ```
 
 Every mutation is archived in the private requests directory before delivery. Retry an uncertain delivery with the saved request ID; creating a second ID is a new operation. A conflict requires reading the latest state and reviewing the proposed change, rather than forcing a stale value.
+
+Capture the workspace `revision` from the state the person reviewed and pass it as `--expected-revision=<revision>` for a decision tied to that state. `approve-fact` requires this option: identical wording can have changed contribution or supporting evidence, so silently fetching the newest revision would approve unseen changes. The example's `7` must be replaced with that reviewed revision. Other mutations accept the option and otherwise read the current revision automatically. Revisions must be nonnegative safe integers; unknown or duplicate options are rejected. `retry` reuses the saved request unchanged and rejects a revision override.
 
 Use `actor=person` only for the person's actual direction or decision in chat. Agent-originated progress and acknowledgment use the agent's owner ID. Actor/channel are attribution, not a substitute for source authorization or exact wording approval.
 

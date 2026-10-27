@@ -5,8 +5,37 @@ import { dataDirectory } from "../server/paths";
 
 const dir = dataDirectory();
 const url = process.env.CAREER_FLOW_URL ?? "http://127.0.0.1:4317";
-const [action = "state", input = "{}"] = process.argv.slice(2);
 try {
+  const positional: string[] = [];
+  let expectedRevision: number | undefined;
+  for (const argument of process.argv.slice(2)) {
+    if (!argument.startsWith("--")) {
+      positional.push(argument);
+      continue;
+    }
+    if (!argument.startsWith("--expected-revision="))
+      throw new Error(`Unknown option: ${argument}`);
+    if (expectedRevision !== undefined)
+      throw new Error("Duplicate --expected-revision option.");
+    const value = argument.slice("--expected-revision=".length);
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))
+      throw new Error(
+        "Invalid --expected-revision: use a nonnegative safe integer.",
+      );
+    expectedRevision = Number(value);
+  }
+  if (positional.length > 2)
+    throw new Error("Expected an action and one JSON payload or file path.");
+  const [action = "state", input = "{}"] = positional;
+  if (
+    expectedRevision !== undefined &&
+    ["retry", "state", "capabilities"].includes(action)
+  )
+    throw new Error(`${action} does not accept an overriding revision option.`);
+  if (action === "approve-fact" && expectedRevision === undefined)
+    throw new Error(
+      "approve-fact requires --expected-revision=<reviewed revision> from the state reviewed by the person.",
+    );
   const headers = {
     Authorization: `Bearer ${readFileSync(join(dir, "control-token"), "utf8").trim()}`,
     "Content-Type": "application/json",
@@ -41,11 +70,11 @@ try {
           ? readFileSync(resolve(input.slice(1)), "utf8")
           : input,
       );
-      const state = await readState();
+      const revision = expectedRevision ?? (await readState()).revision;
       const id = randomUUID();
       request = {
         id,
-        expectedRevision: state.revision,
+        expectedRevision: revision,
         actor: process.env.CAREER_FLOW_AGENT_ID ?? "agent",
         channel: action === "import-session" ? "import" : "agent",
         action,

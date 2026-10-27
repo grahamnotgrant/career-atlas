@@ -17,8 +17,8 @@ Verified on October 27, 2026 with Node.js 26.8.2 on macOS. This records the deli
 
 | Check                                  | Result                                                                                                                                               |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit/integration                       | 186 passed across 30 files                                                                                                                           |
-| Complete Chromium suite                | 33 passed                                                                                                                                            |
+| Unit/integration                       | 195 passed across 30 files                                                                                                                           |
+| Complete Chromium suite                | 38 passed                                                                                                                                            |
 | TypeScript and production build        | Passed                                                                                                                                               |
 | Changed-file formatting and whitespace | Passed                                                                                                                                               |
 | Responsive layouts                     | 360, 714, 900 and 1440px, with short viewport coverage                                                                                               |
@@ -45,3 +45,9 @@ The external agent reads pending instructions on start/resume; this release does
 Managed document previews remain PDF/plain text. Other original formats and portfolio links retain identity and coverage in material inventories; a converted preview cannot establish submitted bytes. External references are not copied by backup automatically.
 
 Current acceptance exercised Codex/local command operation and Chromium on macOS. Linux, Windows and a live Claude-provider walkthrough were not exercised in this run. The existing large-client-bundle build warning remains; the measured scale target passed.
+
+## PR review hardening
+
+PR #3 received independent Standards, Spec and UI/UX reviews. Fixed fresh-workspace export generation, required a captured revision for CLI wording approval, preserved text edited during normal and retried saves, restored question keyboard focus, kept grant controls independent of pending instruction delivery, centered narrow globe viewports and replaced the bright decision card with a quieter navy surface. See [review dispositions](PR3-REVIEW.md).
+
+The complete 38-case browser suite passed. The affected Work UI, palette and 200% rendered CSS zoom checks were rerun after the final next-question focus fix. CSS zoom coverage is not a claim of native browser-menu zoom testing.

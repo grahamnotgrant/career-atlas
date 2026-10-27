@@ -1,5 +1,12 @@
 import { motion } from "motion/react";
-import { useMemo, useState, useEffect, type ReactNode } from "react";
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import type { Application, Outcome, View } from "../shared/model";
 import {
   center,
@@ -78,6 +85,22 @@ export function JourneyScene({
   suppressDetails?: boolean;
 }) {
   const city = view.theme !== "neutral" && view.theme !== "remote";
+  const viewportRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || city) return;
+    let lastWidth = -1;
+    const centerGlobe = () => {
+      const width = viewport.clientWidth;
+      if (!width || width === lastWidth) return;
+      lastWidth = width;
+      viewport.scrollLeft = Math.max(0, (viewport.scrollWidth - width) / 2);
+    };
+    centerGlobe();
+    const observer = new ResizeObserver(centerGlobe);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [city]);
   const drawing = useMemo(
     () => visibleJourneys(applications, view.selectedId),
     [applications, view.selectedId],
@@ -197,6 +220,7 @@ export function JourneyScene({
   return (
     <div className="journey-shell" data-selection={selection?.id ?? "none"}>
       <div
+        ref={viewportRef}
         className={`journey-viewport ${city ? "city-journeys" : "globe-journeys"}`}
         data-layout={city ? "city" : "globe"}
         data-motion={moving ? "on" : "off"}

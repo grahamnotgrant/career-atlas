@@ -323,6 +323,9 @@ export function useWorkspace() {
         setBusy(false);
       }
     };
+    // Authority controls must not wait behind an unrelated, uncertain
+    // workspace delivery. The server still checks the displayed revision.
+    if (action === "grant-state") return run();
     const next = queue.current.then(run, run);
     queue.current = next.then(
       () => {},

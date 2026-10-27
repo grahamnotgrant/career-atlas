@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Snapshot } from "../shared/model";
 import { isQueued, type CareerSettings } from "../shared/career";
 import {
@@ -135,12 +135,14 @@ function runState(run: AgentRun, now: number) {
     return { label: "Check-in overdue", tone: "attention" };
   return { label: "Working", tone: "good" };
 }
+type QuestionDraft = { answer: string; reviewedAt: string };
 function QuestionForm({
   question,
   disabled,
   send,
   draft,
   onDraft,
+  onSaved,
 }: {
   question: WorkspaceQuestion;
   disabled: boolean;
@@ -149,8 +151,9 @@ function QuestionForm({
     payload: Record<string, unknown>,
     success: string,
   ) => Promise<boolean>;
-  draft: { answer: string; reviewedAt: string } | undefined;
-  onDraft: (draft: { answer: string; reviewedAt: string }) => void;
+  draft: QuestionDraft | undefined;
+  onDraft: (draft: QuestionDraft) => void;
+  onSaved: (draft: QuestionDraft) => void;
 }) {
   const answer = draft?.answer ?? "";
   const reviewedAt = draft?.reviewedAt ?? question.updatedAt;
@@ -160,7 +163,8 @@ function QuestionForm({
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (disabled || changed || !answer.trim()) return;
+    if (disabled || changed || !answer.trim() || !draft) return;
+    const submittedDraft = draft;
     if (
       await send(
         "answer",
@@ -168,11 +172,13 @@ function QuestionForm({
         "Answer saved. Your agent can continue from this decision.",
       )
     )
-      update("");
+      onSaved(submittedDraft);
   };
   return (
     <>
-      <h2 id="workspace-question">{question.prompt}</h2>
+      <h2 id="workspace-question" tabIndex={-1}>
+        {question.prompt}
+      </h2>
       {question.recordIds.length > 0 && (
         <p>
           {question.recordIds.length} linked{" "}
@@ -251,6 +257,7 @@ function Preferences({
   const [draft, setDraft] = useState(settings);
   const [draftRevision, setDraftRevision] = useState(revision);
   const [dirty, setDirty] = useState(false);
+  const editVersion = useRef(0);
   const stale = draftRevision !== revision;
   useEffect(() => {
     if (!dirty) {
@@ -259,11 +266,13 @@ function Preferences({
     }
   }, [settings, revision, dirty]);
   const reset = () => {
+    editVersion.current += 1;
     setDraft(settings);
     setDraftRevision(revision);
     setDirty(false);
   };
   const update = (patch: Partial<CareerSettings>) => {
+    editVersion.current += 1;
     setDraft({ ...draft, ...patch });
     setDirty(true);
   };
@@ -272,7 +281,13 @@ function Preferences({
       data-workspace-dirty={dirty ? "true" : undefined}
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!stale && (await save(draft))) setDirty(false);
+        if (stale || disabled) return;
+        const submittedVersion = editVersion.current;
+        const submittedRevision = draftRevision;
+        if (await save(draft)) {
+          setDraftRevision(submittedRevision + 1);
+          if (editVersion.current === submittedVersion) setDirty(false);
+        }
       }}
     >
       <p className="workspace-copy">
@@ -374,13 +389,15 @@ export function WorkspacePanel({
     ),
     ...career.grants.map((g) => g.expiresAt),
   ]);
-  const [busy, setBusy] = useState(false);
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [careerBusy, setCareerBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
     null,
   );
   const [instruction, setInstruction] = useState("");
+  const instructionVersion = useRef(0);
   const [questionDrafts, setQuestionDrafts] = useState<
-    Record<string, { answer: string; reviewedAt: string }>
+    Record<string, QuestionDraft>
   >({});
   const [targetRun, setTargetRun] = useState("");
   const [selectedQuestion, setSelectedQuestion] = useState<string | null>(null);
@@ -397,6 +414,22 @@ export function WorkspacePanel({
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const question =
     questions.find((q) => q.id === selectedQuestion) ?? questions[0];
+  const previousQuestion = useRef({
+    id: question?.id,
+    selected: selectedQuestion,
+  });
+  useEffect(() => {
+    const previous = previousQuestion.current;
+    previousQuestion.current = {
+      id: question?.id,
+      selected: selectedQuestion,
+    };
+    const selectedAnother = selectedQuestion !== previous.selected;
+    const advanced = !!previous.id && question?.id !== previous.id;
+    const focusWasRemoved = document.activeElement === document.body;
+    if (question && (selectedAnother || (advanced && focusWasRemoved)))
+      document.getElementById("workspace-question")?.focus();
+  }, [selectedQuestion, question?.id]);
   const runs = [...state.runs].sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
   );
@@ -443,7 +476,9 @@ export function WorkspacePanel({
       Number(a.state === "revoked" || Date.parse(a.expiresAt) <= now) -
       Number(b.state === "revoked" || Date.parse(b.expiresAt) <= now),
   );
-  const disabled = busy || !!pendingWorkspaceCommand || !connected;
+  const disabled =
+    workspaceBusy || careerBusy || !!pendingWorkspaceCommand || !connected;
+  const authorityDisabled = careerBusy || !connected;
   const questionDirty = Object.values(questionDrafts).some(
     (draft) => !!draft.answer,
   );
@@ -451,11 +486,14 @@ export function WorkspacePanel({
     ([id, draft]) => draft.answer && !questions.some((q) => q.id === id),
   );
   const perform = async (
+    kind: "workspace" | "career",
     command: SendCommand,
     action: string,
     payload: Record<string, unknown>,
     success: string,
   ) => {
+    const busy = kind === "workspace" ? workspaceBusy : careerBusy;
+    const setBusy = kind === "workspace" ? setWorkspaceBusy : setCareerBusy;
     if (busy) return false;
     setBusy(true);
     setNotice(null);
@@ -484,12 +522,12 @@ export function WorkspacePanel({
     action: string,
     payload: Record<string, unknown>,
     success: string,
-  ) => perform(workspaceCommand, action, payload, success);
+  ) => perform("workspace", workspaceCommand, action, payload, success);
   const sendCareer = (
     action: string,
     payload: Record<string, unknown>,
     success: string,
-  ) => perform(careerCommand, action, payload, success);
+  ) => perform("career", careerCommand, action, payload, success);
   const approveFact = (fact: WorkFact) =>
     fact.wording &&
     send(
@@ -558,24 +596,30 @@ export function WorkspacePanel({
           {retryPendingWorkspaceCommand && (
             <button
               className="workspace-secondary"
-              disabled={busy || !connected}
+              disabled={workspaceBusy || !connected}
               onClick={async () => {
-                setBusy(true);
+                const checkedInstructionVersion = instructionVersion.current;
+                const checkedQuestionDrafts = questionDrafts;
+                setWorkspaceBusy(true);
                 try {
                   const ok = await retryPendingWorkspaceCommand();
                   if (ok) {
                     const payload = pendingWorkspaceCommand.payload;
-                    if (
-                      pendingWorkspaceCommand.action === "steer" &&
-                      payload?.instruction === instruction.trim()
-                    )
-                      setInstruction("");
+                    if (pendingWorkspaceCommand.action === "steer")
+                      setInstruction((current) =>
+                        instructionVersion.current ===
+                          checkedInstructionVersion &&
+                        payload?.instruction === current.trim()
+                          ? ""
+                          : current,
+                      );
                     if (
                       pendingWorkspaceCommand.action === "answer" &&
                       typeof payload?.id === "string"
                     ) {
                       const id = payload.id;
                       setQuestionDrafts((old) =>
+                        old[id] === checkedQuestionDrafts[id] &&
                         old[id]?.answer.trim() === payload.answer
                           ? { ...old, [id]: { ...old[id], answer: "" } }
                           : old,
@@ -594,7 +638,7 @@ export function WorkspacePanel({
                     error: true,
                   });
                 } finally {
-                  setBusy(false);
+                  setWorkspaceBusy(false);
                 }
               }}
             >
@@ -607,6 +651,7 @@ export function WorkspacePanel({
         <div className="workspace-main">
           <section
             className="workspace-next"
+            data-has-question={!!question}
             aria-labelledby={
               question ? "workspace-question" : "workspace-no-question"
             }
@@ -626,6 +671,16 @@ export function WorkspacePanel({
                 onDraft={(draft) =>
                   setQuestionDrafts((old) => ({ ...old, [question.id]: draft }))
                 }
+                onSaved={(submittedDraft) =>
+                  setQuestionDrafts((old) =>
+                    old[question.id] === submittedDraft
+                      ? {
+                          ...old,
+                          [question.id]: { ...submittedDraft, answer: "" },
+                        }
+                      : old,
+                  )
+                }
               />
             ) : (
               <>
@@ -640,7 +695,7 @@ export function WorkspacePanel({
                 </p>
                 <div className="workspace-form-actions">
                   <button
-                    className="workspace-primary"
+                    className="workspace-secondary"
                     onClick={() => onNavigate("queue")}
                   >
                     Review role queue
@@ -715,6 +770,7 @@ export function WorkspacePanel({
                 e.preventDefault();
                 if (!instruction.trim() || disabled || targetRunUnavailable)
                   return;
+                const submittedVersion = instructionVersion.current;
                 const ok = await send(
                   "steer",
                   {
@@ -723,7 +779,12 @@ export function WorkspacePanel({
                   },
                   "Instruction saved and waiting for your agent. This does not mean the work has started.",
                 );
-                if (ok) setInstruction("");
+                if (ok)
+                  setInstruction((current) =>
+                    instructionVersion.current === submittedVersion
+                      ? ""
+                      : current,
+                  );
               }}
             >
               <label htmlFor="workspace-instruction">
@@ -732,7 +793,10 @@ export function WorkspacePanel({
               <textarea
                 id="workspace-instruction"
                 value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
+                onChange={(e) => {
+                  instructionVersion.current += 1;
+                  setInstruction(e.target.value);
+                }}
                 required
                 maxLength={10000}
                 rows={3}
@@ -1286,7 +1350,7 @@ export function WorkspacePanel({
                         <div className="workspace-inline-actions">
                           <button
                             className="workspace-secondary"
-                            disabled={disabled || expired}
+                            disabled={authorityDisabled || expired}
                             onClick={() =>
                               void sendCareer(
                                 "grant-state",
@@ -1309,7 +1373,7 @@ export function WorkspacePanel({
                           </button>
                           <button
                             className="workspace-secondary workspace-danger"
-                            disabled={disabled}
+                            disabled={authorityDisabled}
                             onClick={() =>
                               void sendCareer(
                                 "grant-state",

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Route } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -259,6 +259,10 @@ test("work surface preserves decisions, agent delivery, authority and compact re
             .questions.find((q) => q.id === "design-contribution")?.answer,
       )
       .toBe("I set the visual brief and chose the material palette.");
+    await expect(page.locator("#workspace-question")).toHaveText(
+      "Which coursework should we look at next?",
+    );
+    await expect(page.locator("#workspace-question")).toBeFocused();
     expect(store.workspace.snapshot().facts[0].wordingApproval).toBeNull();
     expect(store.career.snapshot().grants[0].state).toBe("active");
 
@@ -487,6 +491,269 @@ test("work surface preserves decisions, agent delivery, authority and compact re
     expect(accessibility.violations).toEqual([]);
     expect(errors).toEqual([]);
   } finally {
+    await page.goto("about:blank").catch(() => {});
+    await server.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("in-flight saves preserve newer drafts and application stop controls remain available", async ({
+  page,
+}) => {
+  test.setTimeout(45000);
+  const dir = mkdtempSync(join(tmpdir(), "atlas-workspace-inflight-"));
+  const store = new Store(dir);
+  store.importManifest(demoManifest(), dir);
+  let sequence = 0;
+  const career = (action: string, payload: unknown) =>
+    store.career.command({
+      id: `inflight-career-${++sequence}`,
+      expectedRevision: store.career.revision(),
+      action,
+      payload,
+    });
+  const workspace = (action: string, payload: unknown) =>
+    store.workspace.command({
+      id: `inflight-workspace-${++sequence}`,
+      expectedRevision: store.workspace.revision(),
+      actor: "review-agent",
+      channel: "agent",
+      action,
+      payload,
+    });
+  career("families", {
+    families: [
+      {
+        id: "design",
+        name: "Design",
+        rank: 1,
+        evidence: ["Synthetic portfolio"],
+        rationale: "Synthetic design experience",
+      },
+    ],
+  });
+  career("grant", {
+    grant: {
+      id: "design-grant",
+      roleFamilyIds: ["design"],
+      locations: ["Chicago"],
+      exclusions: [],
+      minAnnualBase: 50000,
+      currency: "USD",
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      maxApplications: 3,
+      approvedAt: new Date().toISOString(),
+      approvalNote: "Synthetic bounded design grant",
+    },
+  });
+  const releases: (() => void)[] = [];
+  const holdNext = async (path: string, action: string) => {
+    let release!: () => void;
+    let started!: () => void;
+    const barrier = new Promise<void>((resolve) => (release = resolve));
+    const requestStarted = new Promise<void>((resolve) => (started = resolve));
+    let held = false;
+    const handler = async (route: Route) => {
+      if (!held && route.request().postDataJSON().action === action) {
+        held = true;
+        started();
+        await barrier;
+      }
+      await route.continue();
+    };
+    releases.push(release);
+    await page.route(path, handler);
+    return {
+      started: requestStarted,
+      release,
+      remove: () => page.unroute(path, handler),
+    };
+  };
+  const server = await createApp(store);
+  const url = await server.listen({ host: "127.0.0.1", port: 0 });
+  try {
+    await page.goto(url);
+    const arrivalInstruction = page.getByLabel("What should happen next?", {
+      exact: true,
+    });
+    await arrivalInstruction.fill("Keep focus in this unrelated draft.");
+    workspace("question", {
+      question: { id: "first-question", prompt: "First synthetic question?" },
+    });
+    await expect(page.locator("#workspace-question")).toHaveText(
+      "First synthetic question?",
+    );
+    await expect(arrivalInstruction).toBeFocused();
+    await expect(arrivalInstruction).toHaveValue(
+      "Keep focus in this unrelated draft.",
+    );
+    workspace("question", {
+      question: { id: "second-question", prompt: "Second synthetic question?" },
+    });
+    await arrivalInstruction.fill("");
+    await page.getByText("Other questions (1)", { exact: true }).click();
+    await page
+      .getByRole("button", { name: "Second synthetic question?", exact: true })
+      .focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#workspace-question")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Your answer", { exact: true })).toBeFocused();
+    await page
+      .getByRole("button", { name: "First synthetic question?", exact: true })
+      .click();
+
+    const answerHold = await holdNext("**/api/workspace/commands", "answer");
+    const answer = page.getByLabel("Your answer", { exact: true });
+    await answer.fill("Original answer submitted");
+    await page
+      .getByRole("button", { name: "Save answer", exact: true })
+      .click();
+    await answerHold.started;
+    await answer.fill("New answer draft typed during save");
+    answerHold.release();
+    await expect
+      .poll(
+        () =>
+          store.workspace
+            .snapshot()
+            .questions.find((question) => question.id === "first-question")
+            ?.answer,
+      )
+      .toBe("Original answer submitted");
+    await page.getByText("Retained drafts (1)", { exact: true }).click();
+    await expect(
+      page.getByText("New answer draft typed during save", { exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".workspace-screen")).toHaveAttribute(
+      "data-workspace-dirty",
+      "true",
+    );
+    await answerHold.remove();
+
+    const steeringHold = await holdNext("**/api/workspace/commands", "steer");
+    const instruction = page.getByLabel("What should happen next?", {
+      exact: true,
+    });
+    await instruction.fill("Original instruction submitted");
+    await page
+      .getByRole("button", { name: "Save instruction", exact: true })
+      .click();
+    await steeringHold.started;
+    await instruction.fill("New instruction draft typed during save");
+    const pause = page.getByRole("button", {
+      name: "Pause applications",
+      exact: true,
+    });
+    await expect(pause).toBeEnabled();
+    await pause.click();
+    await expect
+      .poll(() => store.career.snapshot().grants[0].state)
+      .toBe("paused");
+    expect(store.workspace.snapshot().steering).toHaveLength(0);
+    steeringHold.release();
+    await expect
+      .poll(() => store.workspace.snapshot().steering[0]?.instruction)
+      .toBe("Original instruction submitted");
+    await expect(
+      page.getByText(
+        "Instruction saved and waiting for your agent. This does not mean the work has started.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(instruction).toHaveValue(
+      "New instruction draft typed during save",
+    );
+    await steeringHold.remove();
+
+    await page.getByText("Search preferences", { exact: true }).click();
+    const preferencesHold = await holdNext(
+      "**/api/career/commands",
+      "settings",
+    );
+    const goals = page.getByLabel("What you want next", { exact: true });
+    await goals.fill("Original search preferences submitted");
+    await page
+      .getByRole("button", { name: "Save preferences", exact: true })
+      .click();
+    await preferencesHold.started;
+    await goals.fill("New search preferences typed during save");
+    preferencesHold.release();
+    await expect
+      .poll(() => store.career.snapshot().settings.goals)
+      .toBe("Original search preferences submitted");
+    await expect(goals).toHaveValue("New search preferences typed during save");
+    await expect(goals.locator("xpath=ancestor::form")).toHaveAttribute(
+      "data-workspace-dirty",
+      "true",
+    );
+    await expect(
+      page.getByRole("button", { name: "Save preferences", exact: true }),
+    ).toBeEnabled();
+    await preferencesHold.remove();
+    await page
+      .getByRole("button", { name: "Save preferences", exact: true })
+      .click();
+    await expect
+      .poll(() => store.career.snapshot().settings.goals)
+      .toBe("New search preferences typed during save");
+    await expect(goals.locator("xpath=ancestor::form")).not.toHaveAttribute(
+      "data-workspace-dirty",
+      "true",
+    );
+
+    await page.route("**/api/workspace/commands", async (route) => {
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      await route.abort();
+    });
+    await instruction.fill("Instruction whose response is lost");
+    await page
+      .getByRole("button", { name: "Save instruction", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Check saved change", exact: true }),
+    ).toBeVisible();
+    const resume = page.getByRole("button", {
+      name: "Resume applications",
+      exact: true,
+    });
+    await expect(resume).toBeEnabled();
+    await resume.click();
+    await expect
+      .poll(() => store.career.snapshot().grants[0].state)
+      .toBe("active");
+    const revoke = page.getByRole("button", {
+      name: "Revoke authorization",
+      exact: true,
+    });
+    await expect(revoke).toBeEnabled();
+    await revoke.click();
+    await expect
+      .poll(() => store.career.snapshot().grants[0].state)
+      .toBe("revoked");
+    await expect(
+      page.getByRole("button", { name: "Check saved change", exact: true }),
+    ).toBeVisible();
+    await page.unroute("**/api/workspace/commands");
+    const retryHold = await holdNext("**/api/workspace/commands", "steer");
+    await page
+      .getByRole("button", { name: "Check saved change", exact: true })
+      .click();
+    await retryHold.started;
+    await instruction.fill("New instruction draft typed during confirmation");
+    retryHold.release();
+    await expect(
+      page.getByRole("button", { name: "Check saved change", exact: true }),
+    ).toHaveCount(0);
+    await expect(instruction).toHaveValue(
+      "New instruction draft typed during confirmation",
+    );
+    expect(store.workspace.snapshot().steering).toHaveLength(2);
+    await retryHold.remove();
+  } finally {
+    for (const release of releases) release();
     await page.goto("about:blank").catch(() => {});
     await server.close();
     store.close();

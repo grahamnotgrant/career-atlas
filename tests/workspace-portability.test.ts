@@ -52,6 +52,7 @@ it("exports workspace revisions and restores durable instructions without creden
         { timeout: 10000 },
       )
       .toBe(1);
+    expect(store.workspace.snapshot().exportHealth.state).toBe("current");
     send("instruction-two", "Ask about my contribution to the volunteer event");
     await expect
       .poll(() => status().revisions.workspace_state, { timeout: 10000 })

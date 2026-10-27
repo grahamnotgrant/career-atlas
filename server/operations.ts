@@ -55,7 +55,8 @@ export function exportSnapshot(dir: string): ExportSnapshot {
         unknown
       >[];
     }
-    const revisions: Record<string, unknown> = {};
+    // A workspace has generation zero before its first manifest import.
+    const revisions: Record<string, unknown> = { generation: 0 };
     for (const row of tables.metadata ?? [])
       if (/revision|generation/.test(String(row.key)))
         revisions[String(row.key)] = row.value;
