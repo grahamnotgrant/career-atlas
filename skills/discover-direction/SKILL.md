@@ -1,23 +1,23 @@
 ---
 name: discover-direction
-description: Establish career goals, constraints and evidence-backed role families; resume after interruptions.
+description: Establish career constraints and evidence-backed role families, or revise direction when new experience changes the fit.
 ---
 
 # Discover direction
 
-Read `../SESSION.md` and `../stop-slop/SKILL.md`. This skill runs in two halves around `../uncover-evidence/SKILL.md`: intake and constraints first, the role recommendation only after the evidence conversation.
+Read `../SESSION.md`, `../stop-slop/SKILL.md` and `../../docs/WORKFLOW-CONTRACTS.md`. This workflow has intake and recommendation branches around `../uncover-evidence/SKILL.md`; reuse established answers and Common startup.
 
-**Inputs:** the user's current resume, what they enjoy and want, existing settings and evidence. No prior conversation is required.
+**Inputs:** goals, current resume, current preferences/families, evidence registry and approved facts/wording.
 
-1. Inventory source files and available tools. Ask for the current resume if none is available, and ask one focused question about the most important missing constraint. Continue with document review while waiting.
-2. Establish what they want to spend their days doing and what they want to avoid, why (the passions and goals behind the search), compensation type and floor, currency, locations, work arrangements, start date, exclusions and work authorization questions that need their input.
-3. Hand off to `../uncover-evidence/SKILL.md` for the experience conversation and its facts file. Do not propose roles before that conversation; a resume alone understates what people own.
-4. Recommend 10–20 ranked role families: the roles the agent believes this person should be applying for, from everything discussed, not a list of open postings. For each, give the supporting facts from the facts file, a duty-level fit, the gaps, and the original employer titles to search. Do not fill the list with weak matches. Present it for approval; the user removes, reorders or adds, and their edits are recorded as user provenance.
-5. Check that the user's home city and each accepted location have a scene (`scenesForLocation` in the catalog, or the city list in the app). Add any that are missing with the `city` action in `../../docs/CAREER-CONTROL.md`, with sourced coordinates, before saving locations. Record available browser, connectors, document tools and agent support. Use a single-agent sequence when delegation is unavailable.
-6. Summarize settings and the approved families for the user and save their corrections. Save unresolved questions with the next action. `../build-role-templates/SKILL.md` follows.
+1. Read the current settings, source materials and prior answers. Ask one focused question only for the most important missing constraint, continuing independent source review. Completion: existing decisions and required gaps are identified without restarting settled onboarding.
+2. Establish desired day-to-day duties, exclusions, compensation basis/floor/currency, locations, remote location restrictions, work arrangements, start date and any work-authorization answers requiring the user. Completion: each required constraint is answered or has a saved dependent question.
+3. Run full or incremental `../uncover-evidence/SKILL.md` as needed. Look beyond resume titles for evidenced discovery, implementation, orchestration, acceptance, adoption and product work. Completion: role recommendations can cite actual fact/source IDs and distinguish unsupported specialist or leadership scope.
+4. Recommend a ranked, evidence-backed family list for user approval, normally 10–20 when the evidence supports that breadth. For each, state duties, fit evidence, gaps and original employer-title search variants. Avoid padding or treating tool familiarity/pay as duty-level fit. Completion: the user-approved ranks/edits and the sourced rationale are saved.
+5. Check accepted locations against the scene catalog; use `city` in `../../docs/CAREER-CONTROL.md` for missing cities with sourced coordinates and specific aliases. Record tool/source capability coverage. Completion: settings/families are saved through supported commands with prior unrelated fields preserved and read back.
+6. Hand the approved families and evidence map to `../critique-resume/SKILL.md` and `../build-role-templates/SKILL.md`. Save any pending constraint and one next action. Completion: next workflow and required inputs are explicit.
 
-**Outputs:** private session, evidence inventory, facts file reference, and editable canonical settings and approved role families. Use the career API documented in `docs/CAREER-CONTROL.md` if available; inspect its current schema before writes. Save a pending draft when the API cannot represent an answer.
+**Outputs:** canonical preferences/families, evidence references, user decisions, pending questions and session handoff.
 
-**Approval gates:** Confirm proposed preferences and the ranked role list with the user before saving them as families. This session does not authorize applications or approve a resume template.
+**Approval gates:** The user approves proposed family choices and material preference changes; an explicit correction is already direction to apply that correction. Direction discovery does not approve template wording or authorize applications.
 
-**Completion checks:** Compensation distinguishes base, total cash and contract rate; locations and exclusions are explicit; every ranked role cites facts-file entries; gaps remain visible; the user approved the list; unresolved required questions keep the session open.
+**Completion checks:** duties, pay basis, location restrictions and exclusions are explicit; families cite facts and preserve substantive gaps; user approval and API readback are recorded; unanswered required facts remain dependencies rather than guessed defaults.

@@ -1,6 +1,6 @@
 # Career Atlas
 
-Track applications, supporting documents and employer outcomes on your computer. Explore applications by city, role family or company. Any local AI assistant (Codex, Claude Code, or another agent that can run commands) reads the records and operates the view through the local API. Career Atlas is meant to be used with an assistant: it has no forms for onboarding, and the workflows in `skills/` are written for the agent to follow with you.
+Track applications, supporting documents and employer outcomes on your computer. Explore applications by city, role family or company. An AI agent is required for setup and search workflows; the app is your visual workspace. Direct the agent in chat and use the app's queue controls to review, hold or skip roles. Both operate on the same local records. Any local assistant (Codex, Claude Code, or another agent that can run commands) can use the API and the workflows in `skills/` with you.
 
 ## Install
 
@@ -35,13 +35,19 @@ npm run atlas -- stop
 
 ## Records and approvals
 
-For a new agent, start with [Start, resume or change the search](docs/AGENT-START.md). It covers onboarding, checking source updates, verifying spreadsheet exports and handling changes without relying on chat history. Give agents outside this checkout its path and ask them to read `AGENTS.md`.
+For a new agent, start with [Start, resume or change the search](docs/AGENT-START.md). It covers onboarding, daily work, checking source updates, verifying spreadsheet exports and handling changes without relying on chat history. Give agents outside this checkout its path and ask them to read `AGENTS.md`. [Workflow contracts](docs/WORKFLOW-CONTRACTS.md) define permissions, evidence and material preservation for every path.
 
 The app keeps discovered, prepared, attempted, blocked, uncertain and confirmed records separate. Confirmed submissions require a receipt or employer acknowledgment. A record of a reviewed job is not a submitted application. Original employer titles and source evidence remain available.
 
-Eight bundled [skills](skills/) cover direction, resume critique, evidence gathering, role templates, role scouting, search execution, record maintenance and outcome review. Scouting reads public employer job boards (Ashby, Greenhouse, Lever, Workable, SmartRecruiters and Workday) with `npm run scout`, and grows its own board list from the Hacker News hiring thread and any company list; no connector or account is required. They save progress for interrupted conversations and include mandatory [writing rules](skills/stop-slop/SKILL.md). Users approve template changes and individual or bounded batches of applications. Exclusive claims and revision checks coordinate agents. One agent can run the same workflow in sequence.
+Bundled [skills](skills/) cover direction, resume critique, evidence gathering, role templates, role scouting, search execution, record maintenance, daily coordination and outcome review. Scouting reads public employer job boards (Ashby, Greenhouse, Lever, Workable, SmartRecruiters and Workday) with `npm run scout`, and grows its own board list from the Hacker News hiring thread and any company list; no connector or account is required. Skills save progress for interrupted conversations and include mandatory [writing rules](skills/stop-slop/SKILL.md). Users approve template changes and individual or bounded batches of applications. Authorized, clear source-backed maintenance proceeds after agent review and readback. Ambiguous matches and new claims still need the user's input. Exclusive claims and revision checks coordinate agents. One agent can run the same workflow in sequence.
 
-Sixty-four cities have scenes; an assistant adds any other city with one command and it appears on the globe with a generic scene. The visual shows city cohorts, recorded interview stages and outcome totals. Select a stage or outcome to see where those applications are: ribbons run from the orb to each city and to the Remote satellite, and a panel lists the companies by location, what happened next, how long each has waited and past applications. City counts are coloured by response rate, applications silent for 30 days move to a No reply orb that only you can close, the footer shows twelve weeks of applications sent against responses received, and a digest reports what landed since your last visit. `npm run resumes` links saved resume PDFs to applications after the fact; see `docs/RESUME-LINKING.md`. The Queue tab lists roles an agent has found and sorted, strong fits first; agents apply to all of them under your grant unless you put one on hold. The records workspace includes target roles, company history and outcome comparisons. Preferences and application permissions are managed through your assistant and the local career API. These features depend on imported evidence. Partial imports cannot support whole-search conversion rates.
+Ask your assistant to follow [daily flow](skills/daily-flow/SKILL.md) to reconcile updates, gather new evidence, scout and submit eligible roles within existing valid grants, then verify the records and export. A blocker on one role does not stop independent work. Daily flow runs when invoked; it does not create a schedule or expand application permissions.
+
+The default Work screen shows the next question, agent check-ins, pending instructions, source coverage and application authority. Answer in the app or direct the agent in chat; both use the [workspace protocol](docs/WORKSPACE-CONTROL.md). Instructions stay pending until an external agent acknowledges them. Review exact proposed wording and approved templates, pause or revoke a grant, and change preferences in the workspace. Agent check-ins, app connection and source/export health remain separate.
+
+Sixty-four cities have scenes; an assistant adds any other city with one command and it appears on the globe with a generic scene. The visual shows city cohorts, recorded interview stages and outcome totals. Select a stage or outcome to see where those applications are: ribbons run from the orb to each city and to the Remote satellite, and a panel lists the companies by location, what happened next, how long each has waited and past applications. City counts are coloured by response rate, applications silent for 30 days move to a No reply orb that only you can close, the footer shows twelve weeks of applications sent against responses received, and a digest reports what landed since your last visit. `npm run resumes` proposes links to saved resume PDFs; [resume linking](docs/RESUME-LINKING.md) defines which evidence is sufficient. The Queue tab lists roles an agent has found and sorted, strong fits first; agents apply to eligible roles under your grant unless you put one on hold. The records workspace includes target roles, company history and outcome comparisons. Preferences and application permissions are managed through the Work screen, your assistant and the local career API. These features depend on imported evidence. Partial imports cannot support whole-search conversion rates.
+
+The [approved workspace roadmap](docs/WORKSPACE-ROADMAP.md) covers task-focused compact views, durable agent activity and questions, equivalent app/chat steering, and evidence across professions. Delivery is tracked under [issue #2](https://github.com/grahamnotgrant/career-atlas/issues/2).
 
 ## Personal storage
 
@@ -51,7 +57,7 @@ Default data locations retain the original `career-flow` name so existing record
 - Linux: `$XDG_DATA_HOME/career-flow`, or `~/.local/share/career-flow`
 - Windows: `%LOCALAPPDATA%/career-flow`
 
-SQLite holds canonical records. SHA-256-named artifacts preserve evidence files. Session notes, resumes, receipts, exports and backups belong outside this checkout. The [privacy guide](docs/PRIVACY.md) explains what an external AI provider or employer receives.
+SQLite holds canonical application and workspace records. SHA-256-named artifacts preserve evidence files. The sourced facts file defaults to `DATA/evidence/facts.md`; agents resolve existing settings and session pointers before creating it. Detailed source notes and originals stay private; agents publish relevant facts, questions and source checkpoints to the Work screen. Session notes, resumes, receipts, exports and backups belong outside this checkout. The [privacy guide](docs/PRIVACY.md) explains what an external AI provider or employer receives.
 
 Core operation uses local assets and a loopback server. Dependency installation requires network access. No model service, cloud database, telemetry or remote fonts are configured. Opening an employer source link uses that external service.
 
@@ -86,6 +92,8 @@ Use `npm run import -- /absolute/path/manifest.json` for a manifest validated by
 The optional private `source-watch.json` file accepts `ledgerPath`, `year` and `intervalMs`. Its first scan records a baseline; later confirmed additions update the scene. It does not replace historical reconciliation. The watcher never edits the source ledger.
 
 For fictional examples, run `npm run demo` with a separate empty data directory, then start the app with that same directory. Demo and private imports cannot share a database.
+
+For a Work-screen example spanning design portfolios, coursework/volunteering and operations experience, use `npm run demo:workspace` with a separate empty data directory. It includes a question, pending instruction, partial source and incomplete historical material inventory. These are synthetic examples, not real submissions or agent activity. The command refuses an existing workspace. Open `/?view=journey` to go directly to the visual overview.
 
 ## Verify
 

@@ -17,28 +17,32 @@ export type Agent = "codex" | "claude";
 export type Action = "install" | "update" | "uninstall" | "status";
 const shortcuts = {
   start: [
-    "Onboard or resume Career Atlas",
-    "Follow the onboarding or resume path that matches this workspace.",
+    "Open or resume Career Atlas",
+    "Choose the route from the user's request and evidence-backed prerequisites. Resume unfinished onboarding when needed; otherwise resume the established workspace and saved operation without repeating answered questions or discarding approvals and valid grants.",
   ],
   sync: [
-    "Reconcile sources and verify the spreadsheet",
-    "Follow Resume and sync in the startup guide, including skills/maintain-records/SKILL.md. Verify canonical writes and spreadsheet export separately.",
+    "Sync authorized sources and work evidence",
+    "Follow Resume and sync in the startup guide and [maintain records](../../../skills/maintain-records/SKILL.md). Check the authorized source scope, retain each source's checked-through point, cursor and blockers, and gather new work evidence incrementally with focused questions where needed. Verify canonical writes and spreadsheet export separately; report the coverage actually checked.",
   ],
   change: [
     "Change preferences, records or the application",
-    "Follow Request changes in the startup guide for the user’s request.",
+    "Follow Request changes in the startup guide. Classify the user's correction before writing, apply its explicit scope, and preserve provenance, untouched fields and prior submitted materials. Use the shared contracts for changed claims, material versions, grant changes and software changes.",
   ],
   apply: [
-    "Continue authorized applications",
-    "Complete startup, then read skills/run-search/SKILL.md. Continue only within existing authorization; this shortcut does not expand it.",
+    "Apply from the existing queue within valid grants",
+    "Follow [run search](../../../skills/run-search/SKILL.md) for eligible roles already in the queue. Reconcile uncertain attempts, vet each role, use the required exclusive claim, and submit only within an existing valid grant using approved material versions. Preserve receipts and scoped blockers. This shortcut does not broaden authorization or authorize discovery.",
   ],
   review: [
-    "Review outcomes and improvements",
-    "Complete startup and sync, then follow skills/review-and-improve/SKILL.md.",
+    "Audit evidence and review scoped outcomes",
+    "Follow [review and improve](../../../skills/review-and-improve/SKILL.md). Audit the available evidence and source coverage before interpreting outcomes; distinguish employer feedback, user reports and agent hypotheses. Limit conclusions to the checked scope and propose any changed claims or materials through the shared approval contract.",
   ],
   scout: [
     "Find and triage new roles",
-    "Complete startup, then follow skills/scout-roles/SKILL.md: poll the employer boards with `npm run scout`, store new roles as opportunities, triage them, and grow the board list with whatever sources are available. Do not claim, prepare or submit; hand triaged roles to career-apply.",
+    "Follow [scout roles](../../../skills/scout-roles/SKILL.md) for discovery and triage only: poll the employer boards with `npm run scout`, store discovered roles as opportunities, triage them, and grow the board list within authorized source coverage. Do not claim, prepare or submit; hand triaged roles to career-apply.",
+  ],
+  daily: [
+    "Run the shared daily Career Atlas workflow",
+    "Follow [daily flow](../../../skills/daily-flow/SKILL.md) as the coordinator for source maintenance, incremental work-evidence discovery and focused questions, queue discovery and triage, authorized applications, and scoped review. Reuse startup and saved phase checkpoints across the shared skills. Applications require existing valid grants and approved material versions; preserve blocked phases while continuing independent authorized work.",
   ],
 } as const;
 const owner = ".career-atlas-owner.json";
@@ -88,7 +92,7 @@ function files(
   task: string,
 ): Record<string, string> {
   const result: Record<string, string> = {
-    "SKILL.md": `---\nname: career-${name}\ndescription: ${description}\n${agent === "claude" ? "disable-model-invocation: true\n" : ""}---\n\nRead ../../../AGENTS.md and ../../../docs/AGENT-START.md relative to this skill directory. The repository root is ../../..; resolve workflow paths below from that root.\n\n${task}\n\nUse the shared instructions rather than inventing a parallel workflow. Preserve evidence, authorization and saved session checkpoints.\n${agent === "claude" ? "\nUser request: $ARGUMENTS\n" : ""}`,
+    "SKILL.md": `---\nname: career-${name}\ndescription: ${description}\n${agent === "claude" ? "disable-model-invocation: true\n" : ""}---\n\nRead [AGENTS.md](../../../AGENTS.md), the [startup guide](../../../docs/AGENT-START.md) and the [workflow contracts](../../../docs/WORKFLOW-CONTRACTS.md) relative to this skill directory. The repository root is ../../..; resolve other workflow paths from that root.\n\nRun Common startup exactly once per run, reusing its completion across coordinator phases and nested shared skills. Reuse the established workspace, private data directory and saved session; resume its checkpoints. Startup reuse does not replace fresh canonical, grant or claim/lease checks required immediately before a mutation or submission.\n\n${task}\n\nUse the shared instructions and approval, material and source contracts. Preserve evidence, authorization and saved session checkpoints.\n${agent === "claude" ? "\nUser request: $ARGUMENTS\n" : ""}`,
   };
   if (agent === "codex")
     result["agents/openai.yaml"] =

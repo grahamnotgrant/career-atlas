@@ -309,6 +309,10 @@ it("lets only the user close silent applications, and only after 30 days", () =>
   const fresh = m.applications.find(
     (a) => a.status === "pending" && a.id !== old.id,
   )!;
+  // The demo's fixed historical dates must not age this fresh-case fixture.
+  fresh.submitted = new Date().toISOString().slice(0, 10);
+  for (const event of fresh.events)
+    if (event.date) event.date = fresh.submitted;
   store.importManifest(m, dir);
   const revision = store.snapshot().view.revision;
   expect(() =>

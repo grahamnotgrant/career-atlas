@@ -25,7 +25,9 @@
     "resumes": "tsx scripts/link-resumes.ts",
     "decisions": "tsx scripts/record-decisions.ts",
     "commands": "tsx scripts/agent-commands.ts",
-    "scout": "tsx scripts/scout.ts"
+    "scout": "tsx scripts/scout.ts",
+    "workspace": "tsx scripts/workspace-control.ts",
+    "demo:workspace": "tsx scripts/workspace-demo.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

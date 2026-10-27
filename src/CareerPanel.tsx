@@ -8,6 +8,7 @@ import {
   type Opportunity,
 } from "../shared/career";
 import { Popup } from "./Popup";
+import { useNow } from "./useNow";
 import { arrangementConversion, formatRate } from "./journey";
 
 type Tab = "queue" | "roles" | "records" | "companies" | "analysis";
@@ -72,10 +73,9 @@ export function CareerPanel({
         ),
     [career.opportunities],
   );
-  /* In flight: every unexpired claim, joined to its opportunity, with how far
-     the agent has taken it. Attempts that ended without a confirmation in the
-     last day, and claims that lapsed mid-way, are the ones a person must see. */
-  const now = Date.now();
+  /* In flight: every claim, joined to its opportunity, with how far the agent
+     has taken it. Unresolved attempts remain visible regardless of age. */
+  const now = useNow(career.claims.map((claim) => claim.expiresAt));
   /* Employer application limits: how many submissions sit inside each
      company's window right now, and when the next one is allowed. */
   const standings = useMemo(() => {
@@ -121,11 +121,9 @@ export function CareerPanel({
   const needsPerson = useMemo(
     () =>
       career.opportunities.filter(
-        (o) =>
-          (o.lifecycle === "uncertain" || o.lifecycle === "blocked") &&
-          o.provenance.some((p) => now - Date.parse(p.recordedAt) < 86_400_000),
+        (o) => o.lifecycle === "uncertain" || o.lifecycle === "blocked",
       ),
-    [career.opportunities, now],
+    [career.opportunities],
   );
   const records = useMemo(
     () =>

@@ -18,11 +18,15 @@ export function Popup({
     lastFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
     lastFocus.current = document.activeElement as HTMLElement;
-    const background = document.querySelector<HTMLElement>("#scene-workspace");
-    if (background) background.inert = true;
+    const backgrounds = [
+      ...document.querySelectorAll<HTMLElement>(
+        "#scene-workspace, .workspace-surface",
+      ),
+    ].map((element) => ({ element, inert: element.inert }));
+    for (const { element } of backgrounds) element.inert = true;
     panel.current?.focus({ preventScroll: true });
     return () => {
-      if (background) background.inert = false;
+      for (const { element, inert } of backgrounds) element.inert = inert;
       lastFocus.current?.focus({ preventScroll: true });
     };
   }, []);

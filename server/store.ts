@@ -1,4 +1,5 @@
 import { transaction } from "./transaction";
+import { WorkspaceStore, migrateWorkspace } from "./workspace";
 import { opportunitySchema } from "../shared/career";
 import {
   CareerStore,
@@ -17,7 +18,7 @@ import {
   chmodSync,
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   initialView,
@@ -47,6 +48,7 @@ export class Store {
   db: DatabaseSync;
   token: string;
   career: CareerStore;
+  workspace: WorkspaceStore;
   constructor(public dir: string) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     for (const name of ["artifacts", "imports", "exports", "backups", "logs"])
@@ -72,7 +74,7 @@ export class Store {
       this.db.prepare("PRAGMA user_version").get() as { user_version: number }
     ).user_version;
     // Bump with every migration that changes user_version.
-    if (version > 4) {
+    if (version > 5) {
       this.db.close();
       throw new Error("Database version is newer than this app.");
     }
@@ -107,6 +109,19 @@ export class Store {
         .run(join(dir, "backups", `before-v4-${Date.now()}.sqlite`));
       migrateTriage(this.db);
     }
+    if (version < 5) {
+      this.db
+        .prepare("VACUUM INTO ?")
+        .run(
+          join(
+            dir,
+            "backups",
+            `before-v5-${Date.now()}-${randomUUID()}.sqlite`,
+          ),
+        );
+      migrateWorkspace(this.db);
+    }
+    this.workspace = new WorkspaceStore(this.db, dir);
     this.db.exec(NORMALIZE_TRIAGE);
     this.db
       .prepare("INSERT OR IGNORE INTO metadata (key,value) VALUES (?,?)")
@@ -179,6 +194,7 @@ export class Store {
     return {
       workspaceId: this.meta("workspaceId", ""),
       career: this.career.snapshot(),
+      workspace: this.workspace.snapshot(),
       applications: apps,
       homeLocation: JSON.parse(
         this.meta(

@@ -1,22 +1,21 @@
 ---
 name: critique-resume
-description: Review a resume for role fit, evidence, readability and extractable text.
+description: Assess a specific resume against target roles, underlying work evidence, and document readability.
 ---
 
 # Critique the resume
 
-Read `../SESSION.md` and `../stop-slop/SKILL.md`.
+Read `../SESSION.md`, `../stop-slop/SKILL.md` and `../../docs/WORKFLOW-CONTRACTS.md` (Materials, Sources and facts, Permissions).
 
-**Inputs:** exact resume file, desired role families, evidence inventory and existing approvals.
+**Inputs:** exact resume/version, target families, source/fact registry and current wording approvals.
 
-1. Preserve the original file and compute its SHA-256. Extract its text with an available document tool and compare it with a rendered view.
-2. Check contact details, dates, education, titles, reading order, headings, bullet structure, links and text extraction. Do not promise ATS acceptance.
-3. For each target family, identify useful experience, weak wording and missing evidence. Quote the exact draft sentence and propose a specific revision.
-4. Trace qualifications and metrics to sources. Ask about unsupported claims; omit them from approved material until resolved.
-5. Run the writing rules, then rank revisions by impact. Avoid rewriting a clear sentence for style alone.
+1. Preserve the original and its full hash. Extract text and inspect a rendered view with available tools. Completion: contact details, dates, titles, education, reading order, headings and links have passed/failed/unavailable findings; do not promise ATS acceptance.
+2. Compare each target family's duties with the resume and underlying evidence. Inspect relevant work artifacts for substantive experience omitted from the document, including agent orchestration or acceptance decisions. Completion: each important omission, gap or weak sentence has a source or a specific unanswered question.
+3. Check ownership, metrics and chronology against their sources. Distinguish a current resume from the historical file actually submitted and keep temporal/version contradictions visible. Use `../uncover-evidence/SKILL.md` for missing contribution/result details. Completion: source coverage and unresolved assertions are explicit without inventing replacement wording as fact.
+4. Propose the highest-impact exact revisions and run the writing pass. Preserve clear wording when a change has no substantive benefit. Completion: each proposed factual/positioning change is mapped to evidence and its approval requirement.
 
-**Outputs:** private critique with source locations, annotated draft, extraction/render findings and questions for evidence gathering.
+**Outputs:** private critique, preserved original/hash, annotated revisions, document checks, evidence questions and next workflow.
 
-**Approval gates:** The user approves material changes to claims or positioning. A suggested edit is not an approved template.
+**Approval gates:** Apply the shared Permissions contract. Suggested new claim/positioning wording needs approval before a new template uses it; an existing approved claim can be retained or routinely tailored.
 
-**Completion checks:** Original preserved; factual claims traceable; extraction and visual checks recorded as passed, failed or unavailable; each unresolved claim has a question; next step names the needed evidence session or template revision.
+**Completion checks:** evidence and document quality were both reviewed; original bytes remain intact; source/ownership/date gaps have questions; candidate wording and approved wording are distinguishable; the next action names the evidence or template work needed.

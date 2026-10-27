@@ -1,25 +1,22 @@
 ---
 name: build-role-templates
-description: Produce and obtain approval for factual resume templates tailored to approved role families.
+description: Build or revise approved role-family resume templates from supported experience and exact wording decisions.
 ---
 
 # Build role templates
 
-Read `../SESSION.md` and `../stop-slop/SKILL.md`.
+Read `../SESSION.md`, `../stop-slop/SKILL.md` and `../../docs/WORKFLOW-CONTRACTS.md` (Sources and facts, Materials, Permissions).
 
-**Inputs:** the user's current resume (the starting document), the approved ranked families, the facts file from `../uncover-evidence/SKILL.md`, the resume critique and approved claims.
+**Inputs:** current resume, approved families, selected facts ledger/source map, critique and existing claim/template approvals.
 
-1. Choose an approved family with sufficient facts. Map its common duties to facts-file entries.
-2. Start from the current resume, not a blank page. Keep the original titles, employers and dates. Reorder and rewrite so the family's duties lead, using only facts-file entries; add nothing the facts file does not support. Keep a claim-to-fact map outside the resume.
-3. Build a restrained single-column document with standard headings, consistent dates and text-based contact details.
-4. Run the `stop-slop` pass in full: every factual sentence checked against its fact entry, stock phrases removed, read aloud.
-5. Generate the document with available local tools. Extract text, inspect reading order, render pages and check clipping, page breaks and links.
-6. Present the exact version for approval and record its hash, family and approval date. Save a new immutable version for later changes; a changed claim or positioning invalidates approval for that version until the user reviews it.
+1. Choose an approved family and map its duties to fact IDs, source versions and approved claim wording. Resolve material ownership/result questions with `../uncover-evidence/SKILL.md`. Completion: supported scope and pending claims are separated; missing setup does not erase established approvals.
+2. Start from the current resume, preserving original titles, employers and dates. Emphasize relevant work, including evidenced architecture, specification, orchestration, acceptance and release judgment; describe agent/team implementation accurately. Keep the claim-to-source map outside the resume. Completion: every factual sentence is supported and new external wording is identified for review.
+3. Build a restrained, readable document and run `../stop-slop/SKILL.md`. Extract text, inspect reading order and render pages to check clipping, breaks and links. Completion: checks are saved as passed, failed or unavailable and the exact review artifact exists.
+4. Present the exact version and batch related new claim/positioning wording for approval. Save the immutable version/hash, family, source map and actual approval through the supported template commands. Completion: approved bytes/wording and their approval reference are unambiguous; unapproved versions stay pending.
+5. Hand approved templates to `../run-search/SKILL.md`. Per-role copies may adjust emphasis and wording within approved claims without separate approval. Preserve their final bytes and lineage in the application archive. Completion: approved inputs and any pending evidence questions are saved.
 
-Per-role tailoring happens later in `../run-search/SKILL.md` from an approved template: the agent adjusts emphasis and wording for one posting, runs `stop-slop` again, and preserves the exact file and hash. Those copies do not need separate approval, because they may not add claims beyond the approved template and facts file; the user can open any of them from the record.
+**Outputs:** immutable private template files, text/render verification, claim-to-source map, canonical template approval and session handoff.
 
-**Outputs:** private template files, extractable text, verification notes, claim-to-fact map and canonical template approval record.
+**Approval gates:** Exact new template versions and material new claims/positioning need approval under the shared contract. Template approval does not authorize a submission; routine per-role tailoring within approved claims does not require repeated approval.
 
-**Approval gates:** User approval of the exact template/version is required before use in applications. Template approval alone does not authorize submitting applications.
-
-**Completion checks:** Approved artifact exists and matches its hash; every claim maps to a facts-file entry; stop-slop pass recorded; visual/extraction checks pass; unapproved versions cannot be mistaken for approved ones.
+**Completion checks:** each approved artifact matches its hash and approval; claims cite sources and accurate actors/results; unresolved candidates cannot enter approved material; API readback and next application/evidence action are recorded.

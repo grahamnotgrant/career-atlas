@@ -43,11 +43,15 @@ async function openApplication(page: Page, company: string) {
   await page
     .getByRole("textbox", { name: "Find an application", exact: true })
     .fill(company);
-  await page.locator(".search-result").first().click();
+  await expect(page.locator(".search-result")).toHaveCount(1);
+  await page.locator(".search-result").filter({ hasText: company }).click();
   await expect(page.locator(".role-title")).toBeVisible();
 }
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
+  // This fictional manifest is dated Sep 17; keep age-derived cohorts stable
+  // while allowing real timers, transitions and arrival playback to advance.
+  await page.clock.setFixedTime("2026-09-18T12:00:00Z");
+  await page.goto("/?view=journey");
   await expect(
     page.getByRole("button", { name: "Find an application" }),
   ).toBeVisible();
@@ -264,7 +268,7 @@ test("queues a confirmed source addition until the scene is visible", async ({
   const server = await createApp(store);
   const url = await server.listen({ host: "127.0.0.1", port: 0 });
   try {
-    await page.goto(url);
+    await page.goto(`${url}/?view=journey`);
     await expect
       .poll(async () => {
         return page.evaluate(async () => {
@@ -320,7 +324,7 @@ test("queues a confirmed source addition until the scene is visible", async ({
       timeout: 6000,
     });
   } finally {
-    await page.goto("about:blank");
+    await page.goto("about:blank").catch(() => {});
     await server.close();
     store.close();
     rmSync(root, { recursive: true, force: true });
@@ -761,7 +765,7 @@ test("initial scene loads through one stream without a duplicate snapshot downlo
     const path = new URL(request.url()).pathname;
     if (path.startsWith("/api/")) requests.push(path);
   });
-  await page.goto("/");
+  await page.goto("/?view=journey");
   await expect(page.locator(".earth-globe")).toBeVisible();
   await expect(page.locator(".stage-hub")).toHaveCount(5);
   expect(requests.filter((path) => path === "/api/events")).toHaveLength(1);

@@ -12,13 +12,15 @@ CAREER_ATLAS_YEAR=2026 CAREER_ATLAS_RECIPIENT_NAME='Your greeting name' \
 
 `CAREER_ATLAS_RECIPIENT_NAME` identifies the recipient in an email greeting, such as `Alex` or `Alex Chen`. Standalone confirmation extraction is skipped when the name is unknown. The parser requires that exact name, a role, a company and affirmative acknowledgment. Existing ledger-to-email matching still requires the recorded role and employer. Incomplete applications and reminders do not become submitted applications.
 
-Keep output and email evidence outside the repository. Review proposed role matches before import. Use a fresh canonical export as the preserved manifest to retain later outcomes and reviewed interview stages. Stage repairs can be applied using `scripts/reconcile-stages.ts`; its output contains only explicitly reviewed applications.
+Keep output and email evidence outside the repository. Under an authorized maintenance request, the agent reviews clear source-backed role matches before import and reads back the result without seeking repeated user approval. Ask about competing identities, conflicting sources or unsupported conclusions. `WORKFLOW-CONTRACTS.md` defines these boundaries. Use a fresh canonical export as the preserved manifest to retain later outcomes and reviewed interview stages. Stage repairs can be applied using `scripts/reconcile-stages.ts`; its output contains only explicitly reviewed applications.
 
 ## Import trust rules
 
 Historical discovery stays separate from submission. The importer requires explicit confirmation language or an employer acknowledgment and preserves its provenance. Decline matching rejects vague scheduling and ongoing-review messages. Same-title jobs require matching source URL evidence before deduplication. Unknown submission dates and interview stages remain unknown.
 
 A ledger transcript is a recorded observation, not a newly fetched primary employer receipt. Import reports must retain that distinction, unresolved claims and source coverage.
+
+Historical resume linking follows `RESUME-LINKING.md`. Only an exact application match and source-specific unique full hash, without a temporal contradiction, replacement or conflict, can proceed after agent review under maintenance authorization. Filename, hash-prefix and variant matches remain unresolved until the user supplies the missing decision or evidence. A confirmed submission does not become uncertain solely because its material archive is incomplete; retain confirmation and report the missing materials separately.
 
 ## Input formats
 

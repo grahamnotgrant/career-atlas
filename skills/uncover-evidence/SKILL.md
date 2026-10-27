@@ -1,25 +1,24 @@
 ---
 name: uncover-evidence
-description: Probe personal ownership and technical or operational details without inflating experience, and record them in a facts file.
+description: Discover experience in authorized work artifacts, clarify personal contribution, or refresh evidence since the last review.
 ---
 
 # Uncover evidence
 
-Read `../SESSION.md` and `../stop-slop/SKILL.md`. During onboarding this is the main conversation: it should be thorough and a little relentless, because the resume rarely shows what the person actually built, decided or owned.
+Read `../SESSION.md`, `../stop-slop/SKILL.md` and `../../docs/WORKFLOW-CONTRACTS.md` (Sources and facts, Permissions). Reuse Common startup when a parent run already completed it.
 
-**Inputs:** the current resume, the user's stated goals, relevant artifacts, prior answers and the existing facts file if one exists.
+**Inputs:** goals, current resume/source materials, prior answers, selected facts ledger and authorized source registry/checkpoints.
 
-Suggest voice first, as an option: this conversation goes better spoken than typed, because people explain their own work in more detail out loud. If the user has any voice or dictation tool (an assistant's voice mode, a dictation app, a recorded note), invite them to talk through each topic and paste or transcribe the result; the agent writes the facts from it. Typing is fine when they prefer it. Never require a voice tool.
+Choose the branch from the request: **full conversation** for initial experience discovery; **incremental refresh** for newly completed work, a role-specific evidence gap or a daily phase. Resolve the existing evidence pointer and facts location before writing; a missing default file does not mean earlier work or approvals do not exist.
 
-1. Walk the resume top to bottom, most recent first. For each role, project or claim, ask the user to describe a specific instance: the initial problem, constraints, what they personally decided and did, who else was involved, what failed, how they verified it and what resulted. Ask one follow-up at a time and keep going until the account holds up.
-2. Ask beyond the resume: side projects, things taught, processes changed, tools built for themselves, work they are proud of that never made it onto a page.
-3. Inspect authorized artifacts where available. Repository code proves that code exists; it does not alone prove the user's authorship, enterprise rollout or customer adoption.
-4. Record the user's exact scope and distinguish personal work from team work. Separate measured outcomes from estimates and aspirations. Where a number is remembered rather than sourced, record it as the user's recollection.
-5. Write the facts file at `DATA/evidence/facts.md` (create or extend; never delete entries): one entry per fact with what they owned or built, when, the scope, any metric with its source or "user recollection", and the artifacts or messages that support it. Templates and applications cite these entries, and `stop-slop` checks claims against them.
-6. Draft a defensible resume bullet and a short interview story for the strongest facts. Read them back for factual correction.
+1. Inspect authorized artifacts first. In full mode, inventory the resume and work beyond it: projects, processes, teaching, customer discovery and things built for the user or others. In incremental mode, search changes since source checkpoints and trace relevant GitHub/Slack discussions, plans, reviews and acceptance artifacts. Save source IDs/versions, checked windows and unavailable sources. Completion: candidate observations reference actual sources or a labeled user report.
+2. Trace each useful observation through problem, constraint, decision, personal contribution, agent/team work, verification and result. Inspect contradictory or later versions before adopting an outcome. Include orchestration, work decomposition, review judgment and acceptance work; distinguish draft, merged, deployed and used. Completion: supported fields and unresolved ownership/results are explicit for each candidate.
+3. Ask one artifact-specific question about the most useful missing fact. For example: “This review changed the acceptance gate; what did you decide, and what did the agents implement?” Follow the answer with the next needed clarification, reusing earlier answers. Offer voice/dictation for a full conversation when useful; typing works without any voice tool. Completion: answered facts or a saved question identify their source and dependent claim; unrelated approved work continues.
+4. Append facts and user corrections under stable IDs in the chosen ledger, following the shared source/ownership/wording distinctions. Preserve superseded evidence and the source of remembered metrics. Completion: each candidate has actor/ownership status, scope, date/result or explicit unknowns, source trail and any remaining question.
+5. When personal scope and results support wording, draft a source-linked resume bullet or short interview story for the strongest experience and present exact new external wording for approval. Otherwise retain the candidate and its ownership/result question. Keep pending claims out of approved application material. Completion: wording approval, a pending wording review or the missing-fact dependency is saved separately from the observed artifact.
 
-**Outputs:** the facts file with source IDs and ownership boundaries, unresolved gaps, approved wording and a resumable session.
+**Outputs:** updated private source registry and facts ledger, candidate/approved wording references, answered and pending questions, source coverage and a resumable handoff.
 
-**Approval gates:** The user confirms new factual claims before they enter the facts file as confirmed; unconfirmed ones stay marked as hypotheses. Voice is suggested, never required.
+**Approval gates:** Apply the shared Permissions contract. Authorized read-only discovery and candidate recording proceed; ask for unclear personal facts/source scope and approval of exact new external claims. An unanswered question blocks that claim, not other eligible applications.
 
-**Completion checks:** Each fact has an actor, action, scope, date and supported result; implementation details withstand follow-up; no invented numbers; user corrections preserved; the facts file is the source every later claim points to. Respect requests to skip or stop and save the next question.
+**Completion checks:** sources were inspected before asking for reconstruction; each fact distinguishes observation, contribution and result; corrections/uncertainty remain visible; exact external wording has its own approval state; source cursors and one next question/action are saved. A refresh is complete for its checked scope, not a claim of exhaustive lifetime experience.
